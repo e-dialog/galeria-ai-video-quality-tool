@@ -30,5 +30,8 @@ steps:
     - 'video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com' 
     - '--no-allow-unauthenticated' 
 
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 images:
 - 'gcr.io/$PROJECT_ID/galeria-ai-video-quality-tool:$COMMIT_SHA'
