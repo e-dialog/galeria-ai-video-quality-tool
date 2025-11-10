@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 BUCKET_NAME = "galeria-retail-api-dev-moving-images"
 VIDEO_PREFIX = "output_videos/"
 BIGQUERY_TABLE = "galeria-retail-api-dev.moving_images.overview"
+SERVICE_ACCOUNT_EMAIL = "video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com"
 
 # Initialize clients
 @st.cache_resource
@@ -83,7 +84,11 @@ else:
     # Get the actual blob object from its name
     try:
         current_blob = bucket.blob(current_video_name) # Get the blob from the bucket
-        signed_url = current_blob.generate_signed_url(version="v4", expiration=timedelta(minutes=15))
+        signed_url = current_blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(minutes=15),
+            service_account_email=SERVICE_ACCOUNT_EMAIL
+        )
     except Exception as e:
         st.error(f"Failed to get video blob or URL for '{current_video_name}'. Check permissions. {e}")
         st.stop()
