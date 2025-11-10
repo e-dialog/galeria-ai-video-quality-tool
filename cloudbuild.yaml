@@ -4,14 +4,14 @@ steps:
   args:
     - 'build'
     - '-t'
-    - 'gcr.io/$PROJECT_ID/galeria-ai-video-quality-tool:$COMMIT_SHA'
+    - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:$COMMIT_SHA'
     - '.'
 
 # Google Container Registry (GCR)
 - name: 'gcr.io/cloud-builders/docker'
   args:
     - 'push'
-    - 'gcr.io/$PROJECT_ID/galeria-ai-video-quality-tool:$COMMIT_SHA'
+    - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:$COMMIT_SHA''
 
 # Image Deployment to Cloud Run
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -34,4 +34,4 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 images:
-- 'gcr.io/$PROJECT_ID/galeria-ai-video-quality-tool:$COMMIT_SHA'
+- 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:$COMMIT_SHA'
