@@ -9,4 +9,4 @@ COPY . .
 
 ENV PORT 8080
 
-CMD ["streamlit", "run", "app.py", "--server.port", "$PORT", "--server.headless", "true", "--server.enableCORS", "false"]
+CMD streamlit run app.py --server.port $PORT --server.headless true --server.enableCORS false
