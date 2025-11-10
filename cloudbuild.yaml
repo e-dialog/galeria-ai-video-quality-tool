@@ -21,7 +21,7 @@ steps:
     - 'deploy'
     - 'galeria-video-moderator-svc'
     - '--image'
-    - 'gcr.io/$PROJECT_ID/galeria-ai-video-quality-tool:$COMMIT_SHA'
+    - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:$COMMIT_SHA'
     - '--platform'
     - 'managed'
     - '--region'
