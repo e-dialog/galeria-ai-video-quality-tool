@@ -1,5 +1,5 @@
 steps:
-# 1. Build the Docker image
+# Docker image
 - name: 'gcr.io/cloud-builders/docker'
   args:
     - 'build'
@@ -7,13 +7,13 @@ steps:
     - 'gcr.io/$PROJECT_ID/galeria-ai-video-quality-tool:$COMMIT_SHA'
     - '.'
 
-# 2. Push the image to Google Container Registry (GCR)
+# Google Container Registry (GCR)
 - name: 'gcr.io/cloud-builders/docker'
   args:
     - 'push'
     - 'gcr.io/$PROJECT_ID/galeria-ai-video-quality-tool:$COMMIT_SHA'
 
-# 3. Deploy the new image to Cloud Run
+# Image Deployment to Cloud Run
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: gcloud
   args:
