@@ -28,7 +28,6 @@ steps:
     - 'europe-west1'
     - '--service-account'
     - 'video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com' 
-    - '--no-allow-unauthenticated' 
 
 options:
   logging: CLOUD_LOGGING_ONLY
