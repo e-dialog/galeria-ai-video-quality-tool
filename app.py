@@ -95,8 +95,7 @@ else:
             expiration=timedelta(minutes=15),
             service_account_email=SERVICE_ACCOUNT_EMAIL
         )
-        # ---------------------------------------------------------
-        
+         
     except Exception as e:
         st.error(f"Failed to get video blob or URL for '{current_video_name}'. Check permissions. {e}")
         st.stop()
