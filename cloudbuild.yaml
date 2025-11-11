@@ -29,7 +29,7 @@ steps:
     - '--service-account'
     - 'video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com'
     - '--add-volume'
-    - 'name=video-key,secret=video-moderator-key'
+    - 'name=video-key,type=secret,secret=video-moderator-key'
     - '--add-volume-mount'
     - 'volume=video-key,mount-path=/secrets'
     - '--set-env-vars'
