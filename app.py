@@ -1,22 +1,28 @@
 import streamlit as st
-from google.cloud import storage, bigquery
+import json
+import os
 from google.oauth2 import service_account
+from google.cloud import storage, bigquery
 from datetime import datetime, timedelta
 
 # --- Configuration ---
 BUCKET_NAME = "galeria-retail-api-dev-moving-images"
 BIGQUERY_TABLE = "galeria-retail-api-dev.moving_images.overview"
-SERVICE_ACCOUNT_KEY_PATH = "/secrets/video-moderator-key.json"  # secret mount path
 
 VIDEO_PREFIXES = ["output_videos/"]
 
-# --- Initialize GCP Clients ---
+# --- Load credentials from environment secret ---
 @st.cache_resource
 def get_gcp_clients():
     try:
-        credentials = service_account.Credentials.from_service_account_file(
-            SERVICE_ACCOUNT_KEY_PATH
-        )
+        key_json = os.environ.get("SERVICE_ACCOUNT_KEY_JSON")
+        if not key_json:
+            st.error("SERVICE_ACCOUNT_KEY_JSON environment variable is missing.")
+            st.stop()
+
+        credentials_info = json.loads(key_json)
+        credentials = service_account.Credentials.from_service_account_info(credentials_info)
+
         storage_client = storage.Client(credentials=credentials)
         bigquery_client = bigquery.Client(credentials=credentials)
         return storage_client, bigquery_client, credentials
