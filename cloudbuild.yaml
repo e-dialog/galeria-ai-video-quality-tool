@@ -14,16 +14,17 @@ steps:
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
-      - run
-      - deploy
-      - galeria-video-moderator-svc
-      - --image=europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:$COMMIT_SHA
-      - --platform=managed
-      - --region=europe-west1
-      - --allow-unauthenticated
-      - --service-account=video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com
-      - --mount=type=secret,source=video-moderator-key,target=/secrets,mode=0444
-      - --update-env-vars=STREAMLIT_SERVER_PORT=8080,GOOGLE_APPLICATION_CREDENTIALS=/secrets/video-moderator-key.json
+    - run
+    - deploy
+    - galeria-video-moderator-svc
+    - --image=europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:latest
+    - --platform=managed
+    - --region=europe-west1
+    - --allow-unauthenticated
+    - --service-account=video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com
+    - --add-volume=name=video-key,type=secret,secret=video-moderator-key
+    - --add-volume-mount=volume=video-key,mount-path=/secrets
+    - --set-env-vars=STREAMLIT_SERVER_PORT=8080,GOOGLE_APPLICATION_CREDENTIALS=/secrets/video-moderator-key.json
 
 options:
   logging: CLOUD_LOGGING_ONLY
