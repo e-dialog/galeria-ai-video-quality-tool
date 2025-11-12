@@ -20,7 +20,6 @@ steps:
       - --image=europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:latest
       - --platform=managed
       - --region=europe-west1
-      - --allow-unauthenticated
       - --service-account=video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com
       - --set-secrets=SERVICE_ACCOUNT_KEY_JSON=video-moderator-key:latest
       - --set-env-vars=STREAMLIT_SERVER_PORT=8080
