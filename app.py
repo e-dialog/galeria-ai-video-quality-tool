@@ -1,7 +1,5 @@
 import streamlit as st
 st.set_page_config(layout="wide", page_title="Video Moderation Tool")
-st.title("📹 Video Moderation Tool")
-
 from google.cloud import storage, bigquery
 from datetime import datetime, timedelta
 import json, os
