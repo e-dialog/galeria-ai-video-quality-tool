@@ -1,4 +1,7 @@
 import streamlit as st
+st.set_page_config(layout="wide", page_title="Video Moderation Tool")
+st.title("📹 Video Moderation Tool")
+
 from google.cloud import storage, bigquery
 from datetime import datetime, timedelta
 import json, os
@@ -74,9 +77,7 @@ def get_videos_to_review():
 
 
 # --- Streamlit UI ---
-st.set_page_config(layout="wide", page_title="Video Moderation Tool")
 st.title("📹 Video Moderation Tool")
-
 if 'video_queue' not in st.session_state:
     st.session_state.video_queue = get_videos_to_review()
 
