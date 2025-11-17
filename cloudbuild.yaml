@@ -1,44 +1,35 @@
--- Run this query in your `galeria-retail-api-dev` project's
--- BigQuery SQL Workspace to create or replace the master table.
+steps:
+# 1. Build the Docker image
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - 'build'
+  - '-t'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+  - '.'
 
-CREATE OR REPLACE TABLE `galeria-retail-api-dev.moving_images.overview` (
-  
-  # Core identifier, e.g., "123_01.png"
-  image_id STRING,
-  
-  # Extracted GTIN, e.g., "123"
-  gtin STRING,
-  
-  # Full path to the original image, e.g., "gs://..."
-  source_gcs_path STRING,
-  
-  # The current state of this item in the workflow
-  # e.g., PENDING, GENERATING, COMPLETED, MODERATED
-  generation_status STRING,
-  
-  # Counter for generation attempts
-  generation_attempts INT64,
-  
-  # The prompt used for generation (editable)
-  prompt STRING,
-  
-  # The GCS path to the generated .mp4 (no gs:// prefix)
-  # e.g., "output_videos/models/123_01.mp4"
-  video_id STRING,
-  
-  # The moderator's final decision
-  # e.g., approve, regenerate, remove
-  decision STRING,
-  
-  # Text notes from the moderator
-  notes STRING,
-  
-  # The name of the moderator who made the decision
-  moderator_id STRING,
-  
-  # Timestamp of when the decision was logged
-  log_timestamp TIMESTAMP,
-  
-  # Timestamp of the last time this row was touched
-  last_updated TIMESTAMP
-);
+# 2. Push the image to Artifact Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - 'push'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+
+# 3. Deploy to Cloud Run
+- name: 'gcr.io/google-cloud-sdk/cloud-sdk'
+  entrypoint: 'gcloud'
+  args:
+  - 'run'
+  - 'deploy'
+  - 'video-moderation-tool' # The name of your Cloud Run service
+  - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+  - '--region=us-central1'
+  - '--platform=managed'
+  - '--allow-unauthenticated'
+
+images:
+- 'us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+
+# This tells Cloud Build to send logs to Cloud Logging
+# instead of a GCS bucket, which fixes the
+# 'build.service_account' permission error.
+options:
+  logging: CLOUD_LOGGING_ONLY
