@@ -1,31 +1,31 @@
 steps:
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - build
-      - '-t'
-      - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:latest'
-      - '.'
+# 1. Build the Docker image
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - 'build'
+  - '-t'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+  - '.'
 
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - push
-      - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:latest'
+# 2. Push the image to Artifact Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - 'push'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
 
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: gcloud
-    args:
-      - run
-      - deploy
-      - galeria-video-moderator-svc
-      - --image=europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:latest
-      - --platform=managed
-      - --region=europe-west1
-      - --service-account=video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com
-      - --set-secrets=SERVICE_ACCOUNT_KEY_JSON=video-moderator-key:latest
-      - --set-env-vars=STREAMLIT_SERVER_PORT=8080
-
-options:
-  logging: CLOUD_LOGGING_ONLY
+# 3. Deploy to Cloud Run
+- name: 'gcr.io/google-cloud-sdk/cloud-sdk'
+  entrypoint: 'gcloud'
+  args:
+  - 'run'
+  - 'deploy'
+  - 'video-moderation-tool' # The name of your Cloud Run service
+  - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+  - '--region=us-central1'
+  - '--platform=managed'
+  - '--allow-unauthenticated'
+  # --- NOTE: The --service-account line is removed ---
+  # The trigger is already configured to use the correct service account.
 
 images:
-  - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:latest'
+- 'us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
