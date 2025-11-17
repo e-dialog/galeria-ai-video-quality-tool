@@ -4,14 +4,16 @@ steps:
   args:
   - 'build'
   - '-t'
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+  # MODIFIED: Changed us-central1 to europe
+  - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
   - '.'
 
 # 2. Push the image to Artifact Registry
 - name: 'gcr.io/cloud-builders/docker'
   args:
   - 'push'
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+  # MODIFIED: Changed us-central1 to europe
+  - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
 
 # 3. Deploy to Cloud Run
 - name: 'gcr.io/google-cloud-sdk/cloud-sdk'
@@ -20,13 +22,18 @@ steps:
   - 'run'
   - 'deploy'
   - 'video-moderation-tool' # The name of your Cloud Run service
-  - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
-  - '--region=us-central1'
+  # MODIFIED: Changed us-central1 to europe
+  - '--image=europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+  # MODIFIED: Changed region to a valid 'europe' region
+  # You can't deploy to a multi-region like 'europe', so pick a specific one
+  # e.g., 'europe-west1' (Belgium) or 'europe-central2' (Warsaw)
+  - '--region=europe-west1'
   - '--platform=managed'
   - '--allow-unauthenticated'
 
 images:
-- 'us-central1-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+# MODIFIED: Changed us-central1 to europe
+- 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
 
 # This tells Cloud Build to send logs to Cloud Logging
 # instead of a GCS bucket, which fixes the
