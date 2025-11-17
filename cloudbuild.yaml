@@ -1,35 +1,42 @@
 steps:
 # 1. Build the Docker image
-# MODIFIED: Pointing to the internal copy of the docker builder
-- name: 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/docker'
+# Uses the official 'docker' image from Docker Hub
+- name: 'docker'
   args:
   - 'build'
   - '-t'
-  - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+  # Uses your colleague's image name
+  - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:$SHORT_SHA'
   - '.'
 
 # 2. Push the image to Artifact Registry
-# MODIFIED: Pointing to the internal copy of the docker builder
-- name: 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/docker'
+# Uses the official 'docker' image from Docker Hub
+- name: 'docker'
   args:
   - 'push'
-  - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+  # Uses your colleague's image name
+  - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:$SHORT_SHA'
 
 # 3. Deploy to Cloud Run
-# MODIFIED: Pointing to the internal copy of the gcloud builder
-- name: 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/gcloud'
-  entrypoint: 'gcloud'
+# Uses the official 'gcloud' image from Docker Hub
+- name: 'google/cloud-sdk'
+  entrypoint: gcloud
   args:
   - 'run'
   - 'deploy'
-  - 'video-moderation-tool' # The name of your Cloud Run service
-  - '--image=europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
-  - '--region=europe-west1'
+  # Uses your colleague's service name
+  - 'galeria-video-moderator-svc'
+  - '--image=europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:$SHORT_SHA'
   - '--platform=managed'
+  - '--region=europe-west1'
+  # Sets the runtime service account, just like your colleague's file
+  - '--service-account=video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com'
+  # We add this to make the app visible. Remove if you want it private.
   - '--allow-unauthenticated'
 
+# Tell Cloud Build to log where the final image is
 images:
-- 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
+- 'europe-docker.pkg.dev/$PROJECT_Click.  ID/galeria-repo/galeria-ai-video-quality-tool:$SHORT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY
