@@ -268,12 +268,12 @@ def get_videos_to_review():
 def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_notes, video_path_to_delete=None):
     """
     Performs a BigQuery UPDATE to log the moderation decision.
-    Now requires moderator_id.
+    Now requires moderator_id (which is an email).
     """
     print(f"Updating decision for {image_id} by {moderator_id}: {decision}")
     
-    if decision == 'regenerate' and video_path_to_delete:
-        st.write(f"Regenerate requested. Deleting old video: {video_path_to_delete}")
+    if (decision == 'regenerate' or decision == 'remove') and video_path_to_delete:
+        st.write(f"Decision '{decision}' requires deletion. Deleting old video: {video_path_to_delete}")
         try:
             blob = bucket.blob(video_path_to_delete)
             blob.delete()
@@ -285,7 +285,6 @@ def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_note
     if decision == 'regenerate':
         new_generation_status = 'PENDING'
 
-    # Use the passed-in moderator_id
     moderator_email = moderator_id
     
     query = f"""
@@ -311,7 +310,7 @@ def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_note
             bigquery.ScalarQueryParameter("gen_status", "STRING", new_generation_status),
             bigquery.ScalarQueryParameter("prompt", "STRING", new_prompt),
             bigquery.ScalarQueryParameter("notes", "STRING", new_notes),
-            bigquery.ScalarQueryParameter("moderator", "STRING", moderator_email), # Use variable
+            bigquery.ScalarQueryParameter("moderator", "STRING", moderator_email),
             bigquery.ScalarQueryParameter("timestamp", "TIMESTAMP", datetime.utcnow().isoformat()),
             bigquery.ScalarQueryParameter("image_id", "STRING", image_id),
         ]
@@ -332,17 +331,19 @@ def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_note
 # --- Streamlit UI ---
 st.title("📹 Video Moderation Tool")
 
-# --- NEW: Moderator Login Logic ---
+# --- Moderator Login Logic ---
 if 'moderator_id' not in st.session_state:
     st.sidebar.header("Login")
-    moderator_name = st.sidebar.text_input("Please enter your name to begin:", key="moderator_name_input")
+    # MODIFIED: Ask for email
+    moderator_email = st.sidebar.text_input("Please enter your email to begin:", key="moderator_email_input")
     
     if st.sidebar.button("Login"):
-        if moderator_name:
-            st.session_state.moderator_id = moderator_name
-            st.rerun() # Rerun the app to show the main content
+        # Basic email check (just checks for '@')
+        if moderator_email and '@' in moderator_email:
+            st.session_state.moderator_id = moderator_email
+            st.rerun()
         else:
-            st.sidebar.error("Name cannot be empty.")
+            st.sidebar.error("Please enter a valid email address.")
     
     # Lock the main app
     st.info("Please log in using the sidebar to start moderation.")
@@ -353,7 +354,7 @@ else:
     st.sidebar.success(f"Logged in as: **{moderator_id}**")
     st.sidebar.header("Admin Tools")
     
-    # --- SYNC BUTTON (now inside the 'else') ---
+    # --- SYNC BUTTON ---
     if st.sidebar.button("🔄 Sync GCS & BigQuery"):
         with st.spinner("Performing 2-way sync..."):
             st.cache_data.clear() 
@@ -368,7 +369,7 @@ else:
             st.rerun() 
     # --- END SYNC BUTTON ---
 
-    # --- Main Moderation Logic (now inside the 'else') ---
+    # --- Main Moderation Logic ---
     if 'video_queue' not in st.session_state:
         st.session_state.video_queue = get_videos_to_review()
 
@@ -434,13 +435,10 @@ else:
             col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("✅ Approve", use_container_width=True):
-                    # Pass the moderator_id
                     update_decision_in_bq(moderator_id, image_id, "approve", edited_prompt, edited_notes)
             with col2:
                 if st.button("♻️ Regenerate", use_container_width=True):
-                    # Pass the moderator_id
                     update_decision_in_bq(moderator_id, image_id, "regenerate", edited_prompt, edited_notes, video_path_to_delete=video_path_gcs)
             with col3:
                 if st.button("🗑️ Remove", use_container_width=True):
-                    # Pass the moderator_id
                     update_decision_in_bq(moderator_id, image_id, "remove", edited_prompt, edited_notes, video_path_to_delete=video_path_gcs)
