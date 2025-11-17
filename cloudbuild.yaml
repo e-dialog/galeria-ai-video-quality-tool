@@ -1,25 +1,23 @@
 steps:
 # 1. Build the Docker image
-# MODIFIED: Changed builder path to 'us-docker.pkg.dev'
-- name: 'us-docker.pkg.dev/cloud-builders/docker'
+# MODIFIED: Pointing to the internal copy of the docker builder
+- name: 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/docker'
   args:
   - 'build'
   - '-t'
-  # This path (your repo) remains in 'europe'
   - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
   - '.'
 
 # 2. Push the image to Artifact Registry
-# MODIFIED: Changed builder path to 'us-docker.pkg.dev'
-- name: 'us-docker.pkg.dev/cloud-builders/docker'
+# MODIFIED: Pointing to the internal copy of the docker builder
+- name: 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/docker'
   args:
   - 'push'
-  # This path (your repo) remains in 'europe'
   - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
 
 # 3. Deploy to Cloud Run
-# MODIFIED: Changed builder path to 'us-docker.pkg.dev'
-- name: 'us-docker.pkg.dev/cloud-builders/gcloud'
+# MODIFIED: Pointing to the internal copy of the gcloud builder
+- name: 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/gcloud'
   entrypoint: 'gcloud'
   args:
   - 'run'
