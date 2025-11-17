@@ -1,23 +1,25 @@
 steps:
 # 1. Build the Docker image
-# MODIFIED: Changed builder path from gcr.io
-- name: 'europe-docker.pkg.dev/cloud-builders/docker'
+# MODIFIED: Changed builder path to 'us-docker.pkg.dev'
+- name: 'us-docker.pkg.dev/cloud-builders/docker'
   args:
   - 'build'
   - '-t'
+  # This path (your repo) remains in 'europe'
   - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
   - '.'
 
 # 2. Push the image to Artifact Registry
-# MODIFIED: Changed builder path from gcr.io
-- name: 'europe-docker.pkg.dev/cloud-builders/docker'
+# MODIFIED: Changed builder path to 'us-docker.pkg.dev'
+- name: 'us-docker.pkg.dev/cloud-builders/docker'
   args:
   - 'push'
+  # This path (your repo) remains in 'europe'
   - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
 
 # 3. Deploy to Cloud Run
-# MODIFIED: Changed builder path from gcr.io
-- name: 'europe-docker.pkg.dev/cloud-builders/gcloud'
+# MODIFIED: Changed builder path to 'us-docker.pkg.dev'
+- name: 'us-docker.pkg.dev/cloud-builders/gcloud'
   entrypoint: 'gcloud'
   args:
   - 'run'
