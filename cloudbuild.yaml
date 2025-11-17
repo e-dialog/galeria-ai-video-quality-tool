@@ -1,42 +1,35 @@
 steps:
 # 1. Build the Docker image
-- name: 'gcr.io/cloud-builders/docker'
+# MODIFIED: Changed builder path from gcr.io
+- name: 'europe-docker.pkg.dev/cloud-builders/docker'
   args:
   - 'build'
   - '-t'
-  # MODIFIED: Changed us-central1 to europe
   - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
   - '.'
 
 # 2. Push the image to Artifact Registry
-- name: 'gcr.io/cloud-builders/docker'
+# MODIFIED: Changed builder path from gcr.io
+- name: 'europe-docker.pkg.dev/cloud-builders/docker'
   args:
   - 'push'
-  # MODIFIED: Changed us-central1 to europe
   - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
 
 # 3. Deploy to Cloud Run
-- name: 'gcr.io/google-cloud-sdk/cloud-sdk'
+# MODIFIED: Changed builder path from gcr.io
+- name: 'europe-docker.pkg.dev/cloud-builders/gcloud'
   entrypoint: 'gcloud'
   args:
   - 'run'
   - 'deploy'
   - 'video-moderation-tool' # The name of your Cloud Run service
-  # MODIFIED: Changed us-central1 to europe
   - '--image=europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
-  # MODIFIED: Changed region to a valid 'europe' region
-  # You can't deploy to a multi-region like 'europe', so pick a specific one
-  # e.g., 'europe-west1' (Belgium) or 'europe-central2' (Warsaw)
   - '--region=europe-west1'
   - '--platform=managed'
   - '--allow-unauthenticated'
 
 images:
-# MODIFIED: Changed us-central1 to europe
 - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/video-moderation-tool:$SHORT_SHA'
 
-# This tells Cloud Build to send logs to Cloud Logging
-# instead of a GCS bucket, which fixes the
-# 'build.service_account' permission error.
 options:
   logging: CLOUD_LOGGING_ONLY
