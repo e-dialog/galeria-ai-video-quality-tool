@@ -1,42 +1,31 @@
 steps:
-# 1. Build the Docker image
-# Uses the official 'docker' image from Docker Hub
-- name: 'docker'
-  args:
-  - 'build'
-  - '-t'
-  # Uses your colleague's image name
-  - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:$SHORT_SHA'
-  - '.'
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - '-t'
+      - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:latest'
+      - '.'
 
-# 2. Push the image to Artifact Registry
-# Uses the official 'docker' image from Docker Hub
-- name: 'docker'
-  args:
-  - 'push'
-  # Uses your colleague's image name
-  - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:$SHORT_SHA'
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - push
+      - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:latest'
 
-# 3. Deploy to Cloud Run
-# Uses the official 'gcloud' image from Docker Hub
-- name: 'google/cloud-sdk'
-  entrypoint: gcloud
-  args:
-  - 'run'
-  - 'deploy'
-  # Uses your colleague's service name
-  - 'galeria-video-moderator-svc'
-  - '--image=europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:$SHORT_SHA'
-  - '--platform=managed'
-  - '--region=europe-west1'
-  # Sets the runtime service account, just like your colleague's file
-  - '--service-account=video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com'
-  # We add this to make the app visible. Remove if you want it private.
-  - '--allow-unauthenticated'
-
-# Tell Cloud Build to log where the final image is
-images:
-- 'europe-docker.pkg.dev/$PROJECT_Click.  ID/galeria-repo/galeria-ai-video-quality-tool:$SHORT_SHA'
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - galeria-video-moderator-svc
+      - --image=europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:latest
+      - --platform=managed
+      - --region=europe-west1
+      - --service-account=video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com
+      - --set-secrets=SERVICE_ACCOUNT_KEY_JSON=video-moderator-key:latest
+      - --set-env-vars=STREAMLIT_SERVER_PORT=8080
 
 options:
   logging: CLOUD_LOGGING_ONLY
+
+images:
+  - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:latest'
