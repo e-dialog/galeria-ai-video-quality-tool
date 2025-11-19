@@ -117,7 +117,7 @@ def get_gcs_output_videos(_storage_client, bucket_name, prefixes):
     for prefix in prefixes:
         blobs = _storage_client.list_blobs(bucket_name, prefix=prefix)
         for blob in blobs:
-            # Only include the file if it's NOT in the 'approved' folder
+            # CRITICAL FIX: Only include the file if it's NOT in the 'approved' folder (which is a subfolder)
             if blob.name.endswith(valid_extensions) and not blob.name.startswith(GCS_APPROVED_FOLDER):
                 video_stem = Path(blob.name).stem
                 if video_stem:
@@ -151,7 +151,6 @@ def recreate_bq_table():
         bigquery.SchemaField("generation_status", "STRING"),
         bigquery.SchemaField("generation_attempts", "INTEGER"),
         bigquery.SchemaField("prompt", "STRING"),
-        # IMPORTANT: Set video_id to nullable STRING to handle NULL insertions cleanly
         bigquery.SchemaField("video_id", "STRING", mode="NULLABLE"), 
         bigquery.SchemaField("decision", "STRING"),
         bigquery.SchemaField("notes", "STRING"),
@@ -203,6 +202,7 @@ def sync_gcs_to_bigquery():
             
             image_stem = Path(image_id).stem
             if image_stem in gcs_output_map:
+                # If a video is already in the output folder, set status to REVIEW_PENDING
                 initial_status = "REVIEW_PENDING" 
                 initial_video_id = gcs_output_map[image_stem]
             # --------------------------------------------------
@@ -312,7 +312,6 @@ def get_videos_to_review():
             FROM `{BIGQUERY_TABLE}`
             WHERE generation_status = 'REVIEW_PENDING' 
               AND decision IS NULL
-              -- Fix: Explicitly filter for non-NULL video_id since that's what we need for review
               AND video_id IS NOT NULL 
             ORDER BY last_updated ASC
         """
