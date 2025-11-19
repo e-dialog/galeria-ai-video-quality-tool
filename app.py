@@ -153,6 +153,8 @@ def recreate_bq_table():
         bigquery.SchemaField("moderator_id", "STRING"),
         bigquery.SchemaField("log_timestamp", "TIMESTAMP"),
         bigquery.SchemaField("last_updated", "TIMESTAMP"),
+        # NEW FIELD: Audit trail for who made the last change
+        bigquery.SchemaField("last_updated_email", "STRING"),
     ]
     try:
         bq_client.delete_table(BIGQUERY_TABLE, not_found_ok=True)
@@ -191,7 +193,6 @@ def sync_gcs_to_bigquery():
             gtin = get_gtin_from_path(image_id)
             
             # --- CRITICAL FIX: Check for video BEFORE insert ---
-            # This avoids the need to UPDATE immediately, bypassing buffer lock
             initial_status = "PENDING"
             initial_video_id = None
             
@@ -213,7 +214,8 @@ def sync_gcs_to_bigquery():
                 "decision": None,
                 "notes": None,
                 "moderator_id": None,
-                "log_timestamp": None
+                "log_timestamp": None,
+                "last_updated_email": None
             })
             
         try:
@@ -227,8 +229,6 @@ def sync_gcs_to_bigquery():
             st.error(f"An error occurred during BQ insert: {e}")
             
     # 3. Task 2: Update OLD rows (Back-fill)
-    # Only needed for rows that existed BEFORE this sync but were missed.
-    # Because they are "old", they are not in the streaming buffer.
     st.write("Checking for existing videos to sync (on old rows)...")
     updates_to_run = []
     stem_to_image_id_map = {Path(img_id).stem: img_id for img_id in bq_existing_ids}
@@ -264,8 +264,6 @@ def sync_gcs_to_bigquery():
                 bq_client.query(query, job_config=job_config).result()
             except Exception as e:
                 if "streaming buffer" in str(e):
-                    # This assumes the row is new (handled by Step 2)
-                    # We can safely ignore this specific error here now
                     pass 
                 else:
                     st.error(f"Failed to back-fill {image_id}: {e}")
@@ -348,6 +346,7 @@ def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_note
                 
                 st.write("Deleting original MP4...")
                 source_blob.delete()
+                
                 st.toast(f"Converted and moved to: {new_video_path}")
 
         elif (decision == 'regenerate' or decision == 'remove') and source_video_path:
@@ -364,9 +363,10 @@ def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_note
         st.stop() 
 
     try:
+        # Added last_updated_email to the query and parameters
         query = f"""
             UPDATE `{BIGQUERY_TABLE}`
-            SET decision = @decision, generation_status = @gen_status, prompt = @prompt, notes = @notes, moderator_id = @moderator, log_timestamp = @timestamp, last_updated = @timestamp, video_id = @new_video_path
+            SET decision = @decision, generation_status = @gen_status, prompt = @prompt, notes = @notes, moderator_id = @moderator, log_timestamp = @timestamp, last_updated = @timestamp, video_id = @new_video_path, last_updated_email = @moderator
             WHERE image_id = @image_id
         """
         job_config = bigquery.QueryJobConfig(
@@ -381,6 +381,7 @@ def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_note
                 bigquery.ScalarQueryParameter("image_id", "STRING", image_id),
             ]
         )
+        
         bq_client.query(query, job_config=job_config).result()
         st.toast(f"✅ Decision '{decision}' logged!")
         st.cache_data.clear()
@@ -416,7 +417,7 @@ else:
 
     if st.sidebar.button("⚠️ Reset Table"):
         if st.sidebar.checkbox("Confirm Reset?"):
-            recreate_bq_table() # Now calls the robust helper
+            recreate_bq_table()
             st.cache_data.clear()
             st.rerun()
 
@@ -461,10 +462,10 @@ else:
             c1, c2, c3 = st.columns(3)
             with c1:
                 if st.button("✅ Approve", use_container_width=True):
-                    update_decision_in_bq(moderator_id, image_id, "approve", edited_prompt, edited_notes, video_path_gcs)
+                    update_decision_in_bq(moderator_id, image_id, "approve", edited_prompt, edited_notes, source_video_path=video_path_gcs)
             with c2:
                 if st.button("♻️ Regenerate", use_container_width=True):
-                    update_decision_in_bq(moderator_id, image_id, "regenerate", edited_prompt, edited_notes, video_path_gcs)
+                    update_decision_in_bq(moderator_id, image_id, "regenerate", edited_prompt, edited_notes, source_video_path=video_path_gcs)
             with c3:
                 if st.button("🗑️ Remove", use_container_width=True):
-                    update_decision_in_bq(moderator_id, image_id, "remove", edited_prompt, edited_notes, video_path_gcs)
+                    update_decision_in_bq(moderator_id, image_id, "remove", edited_prompt, edited_notes, source_video_path=video_path_gcs)
