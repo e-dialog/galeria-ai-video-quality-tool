@@ -8,7 +8,8 @@ import os
 from pathlib import Path
 from google.oauth2 import service_account
 import tempfile
-from moviepy import VideoFileClip
+# FIX: The simple, robust moviepy import
+from moviepy import VideoFileClip 
 
 # --- Configuration ---
 BUCKET_NAME = "galeria-retail-api-dev-moving-images"
@@ -176,7 +177,6 @@ def sync_gcs_to_bigquery():
     
     # 1. Gather Data
     gcs_input_map = get_gcs_input_images(storage_client, BUCKET_NAME, GCS_INPUT_PREFIX)
-    # get_gcs_output_videos returns { "stem": "path/to/video.mp4" }
     gcs_output_map = get_gcs_output_videos(storage_client, BUCKET_NAME, VIDEO_OUTPUT_PREFIXES)
     bq_rows_map = get_bq_all_rows(bq_client, BIGQUERY_TABLE)
     bq_existing_ids = set(bq_rows_map.keys())
@@ -198,6 +198,7 @@ def sync_gcs_to_bigquery():
             
             image_stem = Path(image_id).stem
             if image_stem in gcs_output_map:
+                # If a video is already in the output folder, set status to APPROVAL_PENDING
                 initial_status = "APPROVAL_PENDING"
                 initial_video_id = gcs_output_map[image_stem]
             # --------------------------------------------------
@@ -228,7 +229,7 @@ def sync_gcs_to_bigquery():
         except Exception as e:
             st.error(f"An error occurred during BQ insert: {e}")
             
-    # 3. Task 2: Update OLD rows (Back-fill)
+    # 3. Task 2: Update OLD rows (Back-fill) - Only updates existing rows that are wrong.
     st.write("Checking for existing videos to sync (on old rows)...")
     updates_to_run = []
     stem_to_image_id_map = {Path(img_id).stem: img_id for img_id in bq_existing_ids}
@@ -238,8 +239,8 @@ def sync_gcs_to_bigquery():
             image_id = stem_to_image_id_map[video_stem]
             bq_row = bq_rows_map[image_id]
             
-            # Update if status is wrong OR video_id is missing
-            if bq_row.get('generation_status') == 'PENDING' or bq_row.get('video_id') is None:
+            # Update if status is currently PENDING AND video_id is null/missing (i.e., it was inserted before video existed)
+            if bq_row.get('generation_status') == 'PENDING' and bq_row.get('video_id') is None:
                 updates_to_run.append((image_id, video_path))
 
     if updates_to_run:
@@ -363,7 +364,6 @@ def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_note
         st.stop() 
 
     try:
-        # Added last_updated_email to the query and parameters
         query = f"""
             UPDATE `{BIGQUERY_TABLE}`
             SET decision = @decision, generation_status = @gen_status, prompt = @prompt, notes = @notes, moderator_id = @moderator, log_timestamp = @timestamp, last_updated = @timestamp, video_id = @new_video_path, last_updated_email = @moderator
@@ -465,7 +465,7 @@ else:
                     update_decision_in_bq(moderator_id, image_id, "approve", edited_prompt, edited_notes, source_video_path=video_path_gcs)
             with c2:
                 if st.button("♻️ Regenerate", use_container_width=True):
-                    update_decision_in_bq(moderator_id, image_id, "regenerate", edited_prompt, edited_notes, source_video_path=video_path_gcs)
+                    update_decision_in_bq(moderator_id, image_id, "regenerate", edited_prompt, edited_notes, video_path_gcs)
             with c3:
                 if st.button("🗑️ Remove", use_container_width=True):
-                    update_decision_in_bq(moderator_id, image_id, "remove", edited_prompt, edited_notes, source_video_path=video_path_gcs)
+                    update_decision_in_bq(moderator_id, image_id, "remove", edited_prompt, edited_notes, video_path_gcs)
