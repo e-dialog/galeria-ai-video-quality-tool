@@ -16,13 +16,16 @@ BIGQUERY_TABLE = "galeria-retail-api-dev.moving_images.overview"
 SERVICE_ACCOUNT_EMAIL = "video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com"
 
 # --- GCS Locations ---
-# FIX: Corrected the input prefix to match the nested path in the bucket
+# Input is now nested (FIXED in app10)
 GCS_INPUT_PREFIX = "ai-video-quality-tool/input_images_filterded_sorted/" 
 GCS_PENDING_FOLDER = "ai-video-quality-tool/output/pending/"
 GCS_APPROVED_FOLDER = "ai-video-quality-tool/output/approved/"
 
-# Sync looks here for videos
-VIDEO_OUTPUT_PREFIXES = [GCS_PENDING_FOLDER]
+# FIX: We now scan the *subfolders* inside PENDING where the generator typically places files.
+VIDEO_OUTPUT_PREFIXES = [
+    f"{GCS_PENDING_FOLDER}models/",
+    f"{GCS_PENDING_FOLDER}generated_models/"
+]
 
 
 # --- Default Prompts ---
@@ -113,6 +116,7 @@ def get_gcs_output_videos(_storage_client, bucket_name, prefixes):
     valid_extensions = ('.mp4', '.webp')
     
     for prefix in prefixes:
+        # NOTE: This lists all blobs recursively under the prefix
         blobs = _storage_client.list_blobs(bucket_name, prefix=prefix)
         for blob in blobs:
             if blob.name.endswith(valid_extensions):
@@ -171,7 +175,6 @@ def recreate_bq_table():
 def sync_gcs_to_bigquery():
     """
     Compares GCS input/output folders with BigQuery table.
-    Handles Streaming Buffer Lock by determining correct status BEFORE insert.
     """
     storage_client, bq_client = get_gcp_clients()
     
@@ -192,13 +195,12 @@ def sync_gcs_to_bigquery():
             source_path = gcs_input_map[image_id]
             gtin = get_gtin_from_path(image_id)
             
-            # --- CRITICAL FIX: Check for video BEFORE insert ---
+            # --- Check for video BEFORE insert ---
             initial_status = "PENDING"
             initial_video_id = None
             
             image_stem = Path(image_id).stem
             if image_stem in gcs_output_map:
-                # If a video is already in the output folder, set status to APPROVAL_PENDING
                 initial_status = "APPROVAL_PENDING"
                 initial_video_id = gcs_output_map[image_stem]
             # --------------------------------------------------
@@ -207,8 +209,8 @@ def sync_gcs_to_bigquery():
                 "image_id": image_id,
                 "gtin": gtin,
                 "source_gcs_path": source_path,
-                "generation_status": initial_status, # Set correct status now
-                "video_id": initial_video_id,        # Set correct video now
+                "generation_status": initial_status, 
+                "video_id": initial_video_id,        
                 "generation_attempts": 0,
                 "last_updated": datetime.utcnow().isoformat(),
                 "prompt": get_default_prompt(source_path),
@@ -229,7 +231,7 @@ def sync_gcs_to_bigquery():
         except Exception as e:
             st.error(f"An error occurred during BQ insert: {e}")
             
-    # 3. Task 2: Update OLD rows (Back-fill) - Only updates existing rows that are wrong.
+    # 3. Task 2: Update OLD rows (Back-fill) - Should only run if the generator missed an update.
     st.write("Checking for existing videos to sync (on old rows)...")
     updates_to_run = []
     stem_to_image_id_map = {Path(img_id).stem: img_id for img_id in bq_existing_ids}
@@ -239,7 +241,7 @@ def sync_gcs_to_bigquery():
             image_id = stem_to_image_id_map[video_stem]
             bq_row = bq_rows_map[image_id]
             
-            # Only update if status is currently PENDING AND video_id is null/missing (i.e., it was inserted before video existed)
+            # Only update if status is PENDING AND video_id is null/missing (i.e., generator finished but didn't update status)
             if bq_row.get('generation_status') == 'PENDING' and bq_row.get('video_id') is None:
                 updates_to_run.append((image_id, video_path))
 
