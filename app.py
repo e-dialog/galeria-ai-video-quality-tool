@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 from google.oauth2 import service_account
 import tempfile
-# FIX: The simple, robust moviepy import
 from moviepy import VideoFileClip 
 
 # --- Configuration ---
@@ -229,8 +228,7 @@ def sync_gcs_to_bigquery():
         except Exception as e:
             st.error(f"An error occurred during BQ insert: {e}")
             
-    # 3. Task 2: Update OLD rows (Back-fill)
-    # This task is now primarily for rows inserted by the generator (not by this app's sync)
+    # 3. Task 2: Update OLD rows (Back-fill) - Only updates existing rows that are wrong.
     st.write("Checking for existing videos to sync (on old rows)...")
     updates_to_run = []
     stem_to_image_id_map = {Path(img_id).stem: img_id for img_id in bq_existing_ids}
@@ -240,7 +238,7 @@ def sync_gcs_to_bigquery():
             image_id = stem_to_image_id_map[video_stem]
             bq_row = bq_rows_map[image_id]
             
-            # Only update if status is PENDING AND video_id is missing (i.e., generator finished but didn't update status)
+            # Update if status is currently PENDING AND video_id is null/missing (i.e., it was inserted before video existed)
             if bq_row.get('generation_status') == 'PENDING' and bq_row.get('video_id') is None:
                 updates_to_run.append((image_id, video_path))
 
@@ -416,11 +414,23 @@ else:
             st.sidebar.success("Sync complete!")
             st.rerun()
 
-    if st.sidebar.button("⚠️ Reset Table"):
-        if st.sidebar.checkbox("Confirm Reset?"):
+    # --- FIX: New Reset Logic ---
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ⚠️ **Danger Zone: Reset Table**")
+    
+    # 1. Confirmation Checkbox
+    confirm_reset = st.sidebar.checkbox("Confirm Table Deletion?", key="confirm_reset_checkbox")
+
+    # 2. Dependent Reset Button
+    if confirm_reset:
+        if st.sidebar.button("🚨 DELETE AND RECREATE TABLE", type="primary"):
             recreate_bq_table()
             st.cache_data.clear()
             st.rerun()
+    else:
+        st.sidebar.button("Reset Table", disabled=True)
+    # --- END FIX ---
+
 
     if 'video_queue' not in st.session_state:
         st.session_state.video_queue = get_videos_to_review()
