@@ -210,6 +210,10 @@ def sync_gcs_to_bigquery():
             
             if bq_row.get('generation_status') == 'PENDING' or bq_row.get('video_id') is None:
                 updates_to_run.append((image_id, video_path))
+        else:
+            # Debug mismatch
+            if len(updates_to_run) < 5: # Only show first few mismatches
+                st.write(f"Debug: Video stem '{video_stem}' not found in BQ image stems.")
 
     if updates_to_run:
         st.write(f"Found {len(updates_to_run)} videos to sync. Updating BQ...")

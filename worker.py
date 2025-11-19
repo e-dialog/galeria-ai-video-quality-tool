@@ -123,7 +123,9 @@ def main():
                 video_content = generate_video(prompt, None)
                 
                 # 3. Upload to GCS
-                filename = f"{image_id}.mp4"
+                # Strip existing extension if present to avoid double extension (e.g. .jpg.mp4)
+                stem = os.path.splitext(image_id)[0]
+                filename = f"{stem}.mp4"
                 gcs_path = f"{OUTPUT_PREFIX}{filename}"
                 
                 if upload_to_gcs(storage_client, video_content, gcs_path):
