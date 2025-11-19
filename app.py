@@ -117,7 +117,7 @@ def get_gcs_output_videos(_storage_client, bucket_name, prefixes):
     for prefix in prefixes:
         blobs = _storage_client.list_blobs(bucket_name, prefix=prefix)
         for blob in blobs:
-            # CRITICAL FIX: Only include the file if it's NOT in the 'approved' folder (which is a subfolder)
+            # Only include the file if it's NOT in the 'approved' folder
             if blob.name.endswith(valid_extensions) and not blob.name.startswith(GCS_APPROVED_FOLDER):
                 video_stem = Path(blob.name).stem
                 if video_stem:
@@ -151,13 +151,13 @@ def recreate_bq_table():
         bigquery.SchemaField("generation_status", "STRING"),
         bigquery.SchemaField("generation_attempts", "INTEGER"),
         bigquery.SchemaField("prompt", "STRING"),
-        bigquery.SchemaField("video_id", "STRING"),
+        # IMPORTANT: Set video_id to nullable STRING to handle NULL insertions cleanly
+        bigquery.SchemaField("video_id", "STRING", mode="NULLABLE"), 
         bigquery.SchemaField("decision", "STRING"),
         bigquery.SchemaField("notes", "STRING"),
         bigquery.SchemaField("moderator_id", "STRING"),
         bigquery.SchemaField("log_timestamp", "TIMESTAMP"),
         bigquery.SchemaField("last_updated", "TIMESTAMP"),
-        # NEW FIELD: Audit trail for who made the last change
         bigquery.SchemaField("last_updated_email", "STRING"),
     ]
     try:
@@ -183,6 +183,9 @@ def sync_gcs_to_bigquery():
     bq_rows_map = get_bq_all_rows(bq_client, BIGQUERY_TABLE)
     bq_existing_ids = set(bq_rows_map.keys())
     
+    # Get moderator ID from session state for logging the change
+    moderator_email = st.session_state.get('moderator_id', 'system_sync') 
+    
     # 2. Task 1: Handle NEW images (Forward-fill)
     new_image_ids = set(gcs_input_map.keys()) - bq_existing_ids
     rows_to_insert = []
@@ -195,13 +198,12 @@ def sync_gcs_to_bigquery():
             gtin = get_gtin_from_path(image_id)
             
             # --- Check for video BEFORE insert ---
-            initial_status = "GENERATION_PENDING" # Renamed
+            initial_status = "GENERATION_PENDING" 
             initial_video_id = None
             
             image_stem = Path(image_id).stem
             if image_stem in gcs_output_map:
-                # If a video is already in the output folder, set status to REVIEW_PENDING
-                initial_status = "REVIEW_PENDING" # Renamed
+                initial_status = "REVIEW_PENDING" 
                 initial_video_id = gcs_output_map[image_stem]
             # --------------------------------------------------
 
@@ -218,7 +220,7 @@ def sync_gcs_to_bigquery():
                 "notes": None,
                 "moderator_id": None,
                 "log_timestamp": None,
-                "last_updated_email": None
+                "last_updated_email": moderator_email 
             })
             
         try:
@@ -231,7 +233,7 @@ def sync_gcs_to_bigquery():
         except Exception as e:
             st.error(f"An error occurred during BQ insert: {e}")
             
-    # 3. Task 2: Update OLD rows (Back-fill) - Should only run if the generator missed an update.
+    # 3. Task 2: Update OLD rows (Back-fill) - Only updates existing rows that are wrong.
     st.write("Checking for existing videos to sync (on old rows)...")
     updates_to_run = []
     stem_to_image_id_map = {Path(img_id).stem: img_id for img_id in bq_existing_ids}
@@ -241,8 +243,7 @@ def sync_gcs_to_bigquery():
             image_id = stem_to_image_id_map[video_stem]
             bq_row = bq_rows_map[image_id]
             
-            # Only update if status is PENDING/GENERATION_PENDING AND video_id is null/missing 
-            # We check for PENDING/GENERATION_PENDING status (assuming older data might have PENDING)
+            # Update if status is PENDING/GENERATION_PENDING AND video_id is null/missing 
             if bq_row.get('generation_status') in ('PENDING', 'GENERATION_PENDING') and bq_row.get('video_id') is None:
                 updates_to_run.append((image_id, video_path))
 
@@ -253,9 +254,10 @@ def sync_gcs_to_bigquery():
                 query = f"""
                     UPDATE `{BIGQUERY_TABLE}`
                     SET 
-                        generation_status = 'REVIEW_PENDING',
+                        generation_status = 'REVIEW_PENDING', 
                         video_id = @video_path,
-                        last_updated = @timestamp
+                        last_updated = @timestamp,
+                        last_updated_email = @moderator_email
                     WHERE image_id = @image_id
                 """
                 job_config = bigquery.QueryJobConfig(
@@ -263,6 +265,7 @@ def sync_gcs_to_bigquery():
                         bigquery.ScalarQueryParameter("video_path", "STRING", video_path),
                         bigquery.ScalarQueryParameter("timestamp", "TIMESTAMP", datetime.utcnow().isoformat()),
                         bigquery.ScalarQueryParameter("image_id", "STRING", image_id),
+                        bigquery.ScalarQueryParameter("moderator_email", "STRING", moderator_email),
                     ]
                 )
                 bq_client.query(query, job_config=job_config).result()
@@ -307,8 +310,10 @@ def get_videos_to_review():
         query = f"""
             SELECT image_id, video_id, prompt, notes
             FROM `{BIGQUERY_TABLE}`
-            WHERE generation_status = 'REVIEW_PENDING' # Renamed
+            WHERE generation_status = 'REVIEW_PENDING' 
               AND decision IS NULL
+              -- Fix: Explicitly filter for non-NULL video_id since that's what we need for review
+              AND video_id IS NOT NULL 
             ORDER BY last_updated ASC
         """
         results = bq_client.query(query).result()
@@ -374,7 +379,7 @@ def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_note
             st.toast(f"Deleted old video: {source_video_path}")
             
             if decision == 'regenerate':
-                new_generation_status = 'GENERATION_PENDING' # Renamed
+                new_generation_status = 'GENERATION_PENDING' 
         
     except Exception as e:
         st.error(f"Error handling GCS file: {e}")
@@ -479,7 +484,6 @@ else:
 
         col1, col2 = st.columns([0.4, 0.6])
         with col1:
-            # FIX APPLIED HERE: st.image() no longer needs use_container_width=True
             if video_path_gcs.endswith('.webp'):
                 st.image(signed_url)
             else:
