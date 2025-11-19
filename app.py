@@ -16,7 +16,8 @@ BIGQUERY_TABLE = "galeria-retail-api-dev.moving_images.overview"
 SERVICE_ACCOUNT_EMAIL = "video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com"
 
 # --- GCS Locations ---
-GCS_INPUT_PREFIX = "input_images_filterded_sorted/"
+# FIX: Corrected the input prefix to match the nested path in the bucket
+GCS_INPUT_PREFIX = "ai-video-quality-tool/input_images_filterded_sorted/" 
 GCS_PENDING_FOLDER = "ai-video-quality-tool/output/pending/"
 GCS_APPROVED_FOLDER = "ai-video-quality-tool/output/approved/"
 
@@ -238,7 +239,7 @@ def sync_gcs_to_bigquery():
             image_id = stem_to_image_id_map[video_stem]
             bq_row = bq_rows_map[image_id]
             
-            # Update if status is currently PENDING AND video_id is null/missing (i.e., it was inserted before video existed)
+            # Only update if status is currently PENDING AND video_id is null/missing (i.e., it was inserted before video existed)
             if bq_row.get('generation_status') == 'PENDING' and bq_row.get('video_id') is None:
                 updates_to_run.append((image_id, video_path))
 
