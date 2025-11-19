@@ -229,7 +229,8 @@ def sync_gcs_to_bigquery():
         except Exception as e:
             st.error(f"An error occurred during BQ insert: {e}")
             
-    # 3. Task 2: Update OLD rows (Back-fill) - Only updates existing rows that are wrong.
+    # 3. Task 2: Update OLD rows (Back-fill)
+    # This task is now primarily for rows inserted by the generator (not by this app's sync)
     st.write("Checking for existing videos to sync (on old rows)...")
     updates_to_run = []
     stem_to_image_id_map = {Path(img_id).stem: img_id for img_id in bq_existing_ids}
@@ -239,7 +240,7 @@ def sync_gcs_to_bigquery():
             image_id = stem_to_image_id_map[video_stem]
             bq_row = bq_rows_map[image_id]
             
-            # Update if status is currently PENDING AND video_id is null/missing (i.e., it was inserted before video existed)
+            # Only update if status is PENDING AND video_id is missing (i.e., generator finished but didn't update status)
             if bq_row.get('generation_status') == 'PENDING' and bq_row.get('video_id') is None:
                 updates_to_run.append((image_id, video_path))
 
@@ -465,7 +466,7 @@ else:
                     update_decision_in_bq(moderator_id, image_id, "approve", edited_prompt, edited_notes, source_video_path=video_path_gcs)
             with c2:
                 if st.button("♻️ Regenerate", use_container_width=True):
-                    update_decision_in_bq(moderator_id, image_id, "regenerate", edited_prompt, edited_notes, video_path_gcs)
+                    update_decision_in_bq(moderator_id, image_id, "regenerate", edited_prompt, edited_notes, source_video_path=video_path_gcs)
             with c3:
                 if st.button("🗑️ Remove", use_container_width=True):
-                    update_decision_in_bq(moderator_id, image_id, "remove", edited_prompt, edited_notes, video_path_gcs)
+                    update_decision_in_bq(moderator_id, image_id, "remove", edited_prompt, edited_notes, source_video_path=video_path_gcs)
