@@ -14,10 +14,9 @@ BIGQUERY_TABLE = "galeria-retail-api-dev.moving_images.overview"
 SERVICE_ACCOUNT_EMAIL = "video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com"
 
 # --- GCS Locations ---
-GCS_INPUT_PREFIX = "input_images_filterded_sorted/"
+GCS_INPUT_PREFIX = "ai-video-quality-tool/input_images_filterded_sorted/"
 VIDEO_OUTPUT_PREFIXES = [
-    "output_videos/models/",
-    "output_videos/generated_models/"
+    "ai-video-quality-tool/output/",
 ]
 
 

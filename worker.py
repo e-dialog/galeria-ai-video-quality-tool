@@ -9,7 +9,7 @@ import google.generativeai as genai
 # --- Configuration ---
 BUCKET_NAME = "galeria-retail-api-dev-moving-images"
 BIGQUERY_TABLE = "galeria-retail-api-dev.moving_images.overview"
-OUTPUT_PREFIX = "output_videos/generated_models/"
+OUTPUT_PREFIX = "ai-video-quality-tool/output/"
 POLL_INTERVAL = 10  # Seconds to wait if no work found
 GENERATION_COOLDOWN = 31  # Seconds to wait after a generation
 
