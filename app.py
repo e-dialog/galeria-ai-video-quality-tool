@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from google.oauth2 import service_account
 import tempfile
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 
 # --- Configuration ---
 BUCKET_NAME = "galeria-retail-api-dev-moving-images"
