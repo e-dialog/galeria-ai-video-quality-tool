@@ -18,7 +18,7 @@ SERVICE_ACCOUNT_EMAIL = "video-moderator-galeria-retail@galeria-retail-api-dev.i
 # --- GCS Locations ---
 # Input Images: Corrected path
 GCS_INPUT_PREFIX = "ai-video-quality-tool/input_images_filterded_sorted/" 
-# FIX 1: PENDING is the 'output/' folder where videos currently reside (per screenshot)
+# PENDING is the 'output/' folder where videos currently reside (per screenshot)
 GCS_PENDING_FOLDER = "ai-video-quality-tool/output/" 
 # APPROVED is the final destination folder, must be a SUBFOLDER of the bucket
 GCS_APPROVED_FOLDER = "ai-video-quality-tool/output/approved/"
@@ -195,13 +195,13 @@ def sync_gcs_to_bigquery():
             gtin = get_gtin_from_path(image_id)
             
             # --- Check for video BEFORE insert ---
-            initial_status = "PENDING"
+            initial_status = "GENERATION_PENDING" # Renamed
             initial_video_id = None
             
             image_stem = Path(image_id).stem
             if image_stem in gcs_output_map:
-                # If a video is already in the output folder, set status to APPROVAL_PENDING
-                initial_status = "APPROVAL_PENDING"
+                # If a video is already in the output folder, set status to REVIEW_PENDING
+                initial_status = "REVIEW_PENDING" # Renamed
                 initial_video_id = gcs_output_map[image_stem]
             # --------------------------------------------------
 
@@ -209,8 +209,8 @@ def sync_gcs_to_bigquery():
                 "image_id": image_id,
                 "gtin": gtin,
                 "source_gcs_path": source_path,
-                "generation_status": initial_status, # Set correct status now
-                "video_id": initial_video_id,        # Set correct video now
+                "generation_status": initial_status, 
+                "video_id": initial_video_id,        
                 "generation_attempts": 0,
                 "last_updated": datetime.utcnow().isoformat(),
                 "prompt": get_default_prompt(source_path),
@@ -231,7 +231,7 @@ def sync_gcs_to_bigquery():
         except Exception as e:
             st.error(f"An error occurred during BQ insert: {e}")
             
-    # 3. Task 2: Update OLD rows (Back-fill) - Only updates existing rows that are wrong.
+    # 3. Task 2: Update OLD rows (Back-fill) - Should only run if the generator missed an update.
     st.write("Checking for existing videos to sync (on old rows)...")
     updates_to_run = []
     stem_to_image_id_map = {Path(img_id).stem: img_id for img_id in bq_existing_ids}
@@ -241,8 +241,9 @@ def sync_gcs_to_bigquery():
             image_id = stem_to_image_id_map[video_stem]
             bq_row = bq_rows_map[image_id]
             
-            # Only update if status is currently PENDING AND video_id is null/missing (i.e., it was inserted before video existed)
-            if bq_row.get('generation_status') == 'PENDING' and bq_row.get('video_id') is None:
+            # Only update if status is PENDING/GENERATION_PENDING AND video_id is null/missing 
+            # We check for PENDING/GENERATION_PENDING status (assuming older data might have PENDING)
+            if bq_row.get('generation_status') in ('PENDING', 'GENERATION_PENDING') and bq_row.get('video_id') is None:
                 updates_to_run.append((image_id, video_path))
 
     if updates_to_run:
@@ -252,7 +253,7 @@ def sync_gcs_to_bigquery():
                 query = f"""
                     UPDATE `{BIGQUERY_TABLE}`
                     SET 
-                        generation_status = 'APPROVAL_PENDING',
+                        generation_status = 'REVIEW_PENDING',
                         video_id = @video_path,
                         last_updated = @timestamp
                     WHERE image_id = @image_id
@@ -306,7 +307,7 @@ def get_videos_to_review():
         query = f"""
             SELECT image_id, video_id, prompt, notes
             FROM `{BIGQUERY_TABLE}`
-            WHERE generation_status = 'APPROVAL_PENDING'
+            WHERE generation_status = 'REVIEW_PENDING' # Renamed
               AND decision IS NULL
             ORDER BY last_updated ASC
         """
@@ -325,32 +326,46 @@ def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_note
     
     try:
         if decision == 'approve' and source_video_path:
-            with st.spinner("Converting MP4 to WebP..."):
+            # Check if the file is already a WebP before converting
+            if source_video_path.endswith('.webp'):
+                st.write("Video is already WebP. Moving directly...")
+                video_filename = os.path.basename(source_video_path)
+                destination_path = os.path.join(GCS_APPROVED_FOLDER, video_filename)
+                
+                # Move the file
                 source_blob = bucket.blob(source_video_path)
+                new_blob = bucket.rename_blob(source_blob, destination_path)
+                new_video_path = new_blob.name
                 
-                with tempfile.NamedTemporaryFile(suffix=".mp4") as mp4_temp:
-                    with tempfile.NamedTemporaryFile(suffix=".webp") as webp_temp:
-                        
-                        st.write("Downloading MP4...")
-                        source_blob.download_to_filename(mp4_temp.name)
-                        
-                        st.write("Converting to WebP...")
-                        success = convert_mp4_to_webp(mp4_temp.name, webp_temp.name)
-                        if not success: st.stop()
+                st.toast(f"Moved WebP to: {new_video_path}")
 
-                        video_filename_stem = Path(source_video_path).stem
-                        webp_filename = f"{video_filename_stem}.webp"
-                        destination_path = os.path.join(GCS_APPROVED_FOLDER, webp_filename)
-                        
-                        st.write("Uploading WebP...")
-                        new_blob = bucket.blob(destination_path)
-                        new_blob.upload_from_filename(webp_temp.name)
-                        new_video_path = new_blob.name
-                
-                st.write("Deleting original MP4...")
-                source_blob.delete()
-                
-                st.toast(f"Converted and moved to: {new_video_path}")
+            else: # It's an MP4, so convert it
+                with st.spinner("Converting MP4 to WebP..."):
+                    source_blob = bucket.blob(source_video_path)
+                    
+                    with tempfile.NamedTemporaryFile(suffix=".mp4") as mp4_temp:
+                        with tempfile.NamedTemporaryFile(suffix=".webp") as webp_temp:
+                            
+                            st.write("Downloading MP4...")
+                            source_blob.download_to_filename(mp4_temp.name)
+                            
+                            st.write("Converting to WebP...")
+                            success = convert_mp4_to_webp(mp4_temp.name, webp_temp.name)
+                            if not success: st.stop()
+
+                            video_filename_stem = Path(source_video_path).stem
+                            webp_filename = f"{video_filename_stem}.webp"
+                            destination_path = os.path.join(GCS_APPROVED_FOLDER, webp_filename)
+                            
+                            st.write("Uploading WebP...")
+                            new_blob = bucket.blob(destination_path)
+                            new_blob.upload_from_filename(webp_temp.name)
+                            new_video_path = new_blob.name
+                    
+                    st.write("Deleting original MP4...")
+                    source_blob.delete()
+                    
+                    st.toast(f"Converted and moved to: {new_video_path}")
 
         elif (decision == 'regenerate' or decision == 'remove') and source_video_path:
             st.write(f"Deleting: {source_video_path}")
@@ -359,7 +374,7 @@ def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_note
             st.toast(f"Deleted old video: {source_video_path}")
             
             if decision == 'regenerate':
-                new_generation_status = 'PENDING'
+                new_generation_status = 'GENERATION_PENDING' # Renamed
         
     except Exception as e:
         st.error(f"Error handling GCS file: {e}")
@@ -464,8 +479,9 @@ else:
 
         col1, col2 = st.columns([0.4, 0.6])
         with col1:
+            # FIX APPLIED HERE: st.image() no longer needs use_container_width=True
             if video_path_gcs.endswith('.webp'):
-                st.image(signed_url, use_container_width=True)
+                st.image(signed_url)
             else:
                 st.video(signed_url)
         with col2:
