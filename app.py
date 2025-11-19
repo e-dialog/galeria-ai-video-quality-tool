@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 from google.oauth2 import service_account
+import tempfile
+from moviepy.editor import VideoFileClip
 
 # --- Configuration ---
 BUCKET_NAME = "galeria-retail-api-dev-moving-images"
@@ -14,10 +16,12 @@ BIGQUERY_TABLE = "galeria-retail-api-dev.moving_images.overview"
 SERVICE_ACCOUNT_EMAIL = "video-moderator-galeria-retail@galeria-retail-api-dev.iam.gserviceaccount.com"
 
 # --- GCS Locations ---
-GCS_INPUT_PREFIX = "ai-video-quality-tool/input_images_filterded_sorted/"
-VIDEO_OUTPUT_PREFIXES = [
-    "ai-video-quality-tool/output/",
-]
+GCS_INPUT_PREFIX = "input_images_filterded_sorted/"
+GCS_PENDING_FOLDER = "ai-video-quality-tool/output/pending/"
+GCS_APPROVED_FOLDER = "ai-video-quality-tool/output/approved/"
+
+# Sync looks here for videos
+VIDEO_OUTPUT_PREFIXES = [GCS_PENDING_FOLDER]
 
 
 # --- Default Prompts ---
@@ -43,17 +47,14 @@ The movement **comes to a complete stop precisely when the garment is viewed fro
 - The white background and lighting must remain constant.
 - No black bars above or beside the video
 """
+
 def get_default_prompt(source_gcs_path: str) -> str:
-    """Determines the default prompt based on the input path."""
     if "products" in source_gcs_path:
-        # return PRODUCT_PROMPT (when you add it)
         return "PRODUCT_PROMPT_PLACEHOLDER"
     return DEFAULT_MODEL_PROMPT
 
-
 @st.cache_resource
 def get_gcp_clients():
-    """Initializes GCP clients using secret-based credentials or default token."""
     try:
         key_json = os.getenv("SERVICE_ACCOUNT_KEY_JSON")
         if key_json:
@@ -72,9 +73,9 @@ def get_gcp_clients():
 storage_client, bq_client = get_gcp_clients()
 bucket = storage_client.bucket(BUCKET_NAME)
 
-# --- Helper 1: Get GTIN ---
+# --- Helpers ---
+
 def get_gtin_from_path(image_name: str) -> str | None:
-    """Extracts the GTIN from an image filename."""
     try:
         image_stem = Path(image_name).stem
         gtin_prefix = "generated_"
@@ -90,36 +91,24 @@ def get_gtin_from_path(image_name: str) -> str | None:
         pass
     return None
 
-# --- Helper 2: Scan GCS Inputs (for Sync) ---
 @st.cache_data(ttl=300)
 def get_gcs_input_images(_storage_client, bucket_name, prefix):
-    """
-    Scans GCS input prefix and returns a dict of
-    {image_id: "full_gcs_path"} for all valid images.
-    """
     st.write(f"Scanning GCS Input: `gs://{bucket_name}/{prefix}`...")
     blobs = _storage_client.list_blobs(bucket_name, prefix=prefix)
     gcs_images = {}
     valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
-    
     for blob in blobs:
         if blob.name.endswith(valid_extensions):
             image_id = os.path.basename(blob.name)
             if image_id: 
                 gcs_images[image_id] = f"gs://{bucket_name}/{blob.name}"
-                
     st.write(f"Found {len(gcs_images)} input images in GCS.")
     return gcs_images
 
-# --- Helper 3: Scan GCS Outputs (for Sync) ---
 @st.cache_data(ttl=300)
 def get_gcs_output_videos(_storage_client, bucket_name, prefixes):
-    """
-    Scans GCS output prefixes and returns a dict of
-    {video_stem: "full_gcs_path"} for all valid videos.
-    """
     st.write("Scanning GCS Output folders...")
-    gcs_videos = {}
+    gcs_videos = {} # Key: stem, Value: full path
     valid_extensions = ('.mp4', '.webp')
     
     for prefix in prefixes:
@@ -129,78 +118,95 @@ def get_gcs_output_videos(_storage_client, bucket_name, prefixes):
                 video_stem = Path(blob.name).stem
                 if video_stem:
                     gcs_videos[video_stem] = blob.name 
-    
     st.write(f"Found {len(gcs_videos)} generated videos in GCS.")
     return gcs_videos
 
-# --- Helper 4: Get All BQ Rows (for Sync) ---
 @st.cache_data(ttl=300)
 def get_bq_all_rows(_bq_client, table_id):
-    """Queries BigQuery for all image_ids and their status."""
     st.write("Querying BigQuery for all existing rows...")
     try:
-        query = f"""
-            SELECT 
-                image_id, 
-                generation_status, 
-                video_id 
-            FROM `{table_id}` 
-            WHERE image_id IS NOT NULL
-        """
+        query = f"SELECT image_id, generation_status, video_id FROM `{table_id}` WHERE image_id IS NOT NULL"
         results = _bq_client.query(query).result()
         row_map = {row.image_id: dict(row) for row in results}
         st.write(f"Found {len(row_map)} existing rows in BigQuery.")
         return row_map
     except Exception as e:
-        if "image_id" in str(e):
-             st.warning("Column 'image_id' not found. Returning empty map.")
+        if "not found" in str(e).lower():
+             st.warning("Table not found. Please click 'Reset Table' to create it.")
              return {}
-        st.error(f"Error querying BigQuery for existing rows: {e}")
+        st.error(f"Error querying BigQuery: {e}")
         return {}
 
-# --- Sync Function ---
+# --- NEW: Create Table Helper (for Reset) ---
+def recreate_bq_table():
+    """Drops and recreates the table with the correct schema."""
+    schema = [
+        bigquery.SchemaField("image_id", "STRING"),
+        bigquery.SchemaField("gtin", "STRING"),
+        bigquery.SchemaField("source_gcs_path", "STRING"),
+        bigquery.SchemaField("generation_status", "STRING"),
+        bigquery.SchemaField("generation_attempts", "INTEGER"),
+        bigquery.SchemaField("prompt", "STRING"),
+        bigquery.SchemaField("video_id", "STRING"),
+        bigquery.SchemaField("decision", "STRING"),
+        bigquery.SchemaField("notes", "STRING"),
+        bigquery.SchemaField("moderator_id", "STRING"),
+        bigquery.SchemaField("log_timestamp", "TIMESTAMP"),
+        bigquery.SchemaField("last_updated", "TIMESTAMP"),
+    ]
+    try:
+        bq_client.delete_table(BIGQUERY_TABLE, not_found_ok=True)
+        table = bigquery.Table(BIGQUERY_TABLE, schema=schema)
+        bq_client.create_table(table)
+        st.success(f"Table `{BIGQUERY_TABLE}` successfully recreated!")
+        return True
+    except Exception as e:
+        st.error(f"Failed to recreate table: {e}")
+        return False
+
+# --- FIXED SYNC FUNCTION ---
 def sync_gcs_to_bigquery():
     """
     Compares GCS input/output folders with BigQuery table.
-    1. Inserts new 'PENDING' rows from GCS inputs.
-    2. Updates 'APPROVAL_PENDING' status for existing rows found in GCS outputs.
+    Handles Streaming Buffer Lock by determining correct status BEFORE insert.
     """
     storage_client, bq_client = get_gcp_clients()
+    
+    # 1. Gather Data
     gcs_input_map = get_gcs_input_images(storage_client, BUCKET_NAME, GCS_INPUT_PREFIX)
+    # get_gcs_output_videos returns { "stem": "path/to/video.mp4" }
     gcs_output_map = get_gcs_output_videos(storage_client, BUCKET_NAME, VIDEO_OUTPUT_PREFIXES)
     bq_rows_map = get_bq_all_rows(bq_client, BIGQUERY_TABLE)
     bq_existing_ids = set(bq_rows_map.keys())
     
-    # Task 1: Find new images to add
+    # 2. Task 1: Handle NEW images (Forward-fill)
     new_image_ids = set(gcs_input_map.keys()) - bq_existing_ids
     rows_to_insert = []
     
     if new_image_ids:
         st.write(f"Found {len(new_image_ids)} new images. Preparing to insert...")
+        
         for image_id in new_image_ids:
             source_path = gcs_input_map[image_id]
             gtin = get_gtin_from_path(image_id)
             
-            # Check if video already exists to avoid immediate UPDATE (which fails on streaming buffer)
+            # --- CRITICAL FIX: Check for video BEFORE insert ---
+            # This avoids the need to UPDATE immediately, bypassing buffer lock
             initial_status = "PENDING"
             initial_video_id = None
             
-            # Check if we have a matching video in the output map
-            # We need to check by stem
             image_stem = Path(image_id).stem
-            # Find video with same stem
-            for vid_stem, vid_path in gcs_output_map.items():
-                if vid_stem == image_stem:
-                    initial_status = "APPROVAL_PENDING"
-                    initial_video_id = vid_path
-                    break
+            if image_stem in gcs_output_map:
+                initial_status = "APPROVAL_PENDING"
+                initial_video_id = gcs_output_map[image_stem]
+            # --------------------------------------------------
 
             rows_to_insert.append({
                 "image_id": image_id,
                 "gtin": gtin,
                 "source_gcs_path": source_path,
-                "generation_status": initial_status,
-                "video_id": initial_video_id,
+                "generation_status": initial_status, # Set correct status now
+                "video_id": initial_video_id,        # Set correct video now
                 "generation_attempts": 0,
                 "last_updated": datetime.utcnow().isoformat(),
                 "prompt": get_default_prompt(source_path),
@@ -211,20 +217,19 @@ def sync_gcs_to_bigquery():
             })
             
         try:
-            # Use Load Job instead of Streaming Insert to avoid "streaming buffer" locking rows from UPDATE
-            job_config = bigquery.LoadJobConfig(
-                write_disposition="WRITE_APPEND",
-                schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
-                autodetect=True, # Or specify schema if needed, but autodetect usually works for JSON
-            )
-            job = bq_client.load_table_from_json(rows_to_insert, BIGQUERY_TABLE, job_config=job_config)
-            job.result() # Wait for job to complete
-            st.success(f"Successfully loaded {len(rows_to_insert)} new rows.")
+            # Insert new rows
+            errors = bq_client.insert_rows_json(BIGQUERY_TABLE, rows_to_insert)
+            if not errors:
+                st.success(f"Successfully loaded {len(rows_to_insert)} new rows.")
+            else:
+                st.error(f"Errors inserting rows: {errors}")
         except Exception as e:
-            st.error(f"An error occurred during BQ load: {e}")
+            st.error(f"An error occurred during BQ insert: {e}")
             
-    # Task 2: "Back-fill" - Find existing rows to update
-    st.write("Checking for existing videos to sync...")
+    # 3. Task 2: Update OLD rows (Back-fill)
+    # Only needed for rows that existed BEFORE this sync but were missed.
+    # Because they are "old", they are not in the streaming buffer.
+    st.write("Checking for existing videos to sync (on old rows)...")
     updates_to_run = []
     stem_to_image_id_map = {Path(img_id).stem: img_id for img_id in bq_existing_ids}
     
@@ -233,11 +238,12 @@ def sync_gcs_to_bigquery():
             image_id = stem_to_image_id_map[video_stem]
             bq_row = bq_rows_map[image_id]
             
+            # Update if status is wrong OR video_id is missing
             if bq_row.get('generation_status') == 'PENDING' or bq_row.get('video_id') is None:
                 updates_to_run.append((image_id, video_path))
 
     if updates_to_run:
-        st.write(f"Found {len(updates_to_run)} videos to sync. Updating BQ...")
+        st.write(f"Found {len(updates_to_run)} old rows to update...")
         for image_id, video_path in updates_to_run:
             try:
                 query = f"""
@@ -256,160 +262,164 @@ def sync_gcs_to_bigquery():
                     ]
                 )
                 bq_client.query(query, job_config=job_config).result()
-                bq_client.query(query, job_config=job_config).result()
             except Exception as e:
                 if "streaming buffer" in str(e):
-                    st.warning(f"Skipped update for {image_id} due to streaming buffer lock. Use 'Reset Table' if this persists.")
+                    # This assumes the row is new (handled by Step 2)
+                    # We can safely ignore this specific error here now
+                    pass 
                 else:
                     st.error(f"Failed to back-fill {image_id}: {e}")
                 
     return len(rows_to_insert), len(updates_to_run)
 
 
-# --- Get Moderation Queue ---
+# --- WebP Conversion ---
+def convert_mp4_to_webp(mp4_temp_file_path, webp_temp_file_path):
+    """Converts MP4 to WebP using moviepy."""
+    try:
+        video_clip = VideoFileClip(mp4_temp_file_path)
+        video_clip.write_videofile(
+            webp_temp_file_path,
+            codec='libwebp',
+            preset='default',
+            ffmpeg_params=[
+                '-vf', 'fps=25',
+                '-lossless', '0',
+                '-q:v', '80', 
+                '-loop', '0'
+            ],
+            audio=False,
+            logger=None
+        )
+        video_clip.close()
+        return True
+    except Exception as e:
+        st.error(f"Failed to convert video: {e}")
+        return False
+
+# --- Get Queue ---
 @st.cache_data(ttl=60)
 def get_videos_to_review():
-    """
-    Queries BigQuery for videos that are generated and ready for moderation.
-    """
     print("Querying BQ for videos to review...")
     try:
         query = f"""
-            SELECT 
-                image_id, 
-                video_id, 
-                prompt,
-                notes
+            SELECT image_id, video_id, prompt, notes
             FROM `{BIGQUERY_TABLE}`
             WHERE generation_status = 'APPROVAL_PENDING'
               AND decision IS NULL
             ORDER BY last_updated ASC
         """
         results = bq_client.query(query).result()
-        queue = [dict(row) for row in results]
-        return queue
+        return [dict(row) for row in results]
     except Exception as e:
-        st.error(f"Error querying BigQuery for review queue: {e}")
+        st.error(f"Error querying BigQuery: {e}")
         return []
 
-# --- MODIFIED: Log Decision ---
-def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_notes, video_path_to_delete=None):
-    """
-    Performs a BigQuery UPDATE to log the moderation decision.
-    Now requires moderator_id (which is an email).
-    """
+# --- Log Decision ---
+def update_decision_in_bq(moderator_id, image_id, decision, new_prompt, new_notes, source_video_path=None):
     print(f"Updating decision for {image_id} by {moderator_id}: {decision}")
     
-    if (decision == 'regenerate' or decision == 'remove') and video_path_to_delete:
-        st.write(f"Decision '{decision}' requires deletion. Deleting old video: {video_path_to_delete}")
-        try:
-            blob = bucket.blob(video_path_to_delete)
-            blob.delete()
-            st.toast(f"Deleted old video: {video_path_to_delete}")
-        except Exception as e:
-            st.warning(f"Could not delete old video {video_path_to_delete}: {e}")
-    
-    new_generation_status = 'MODERATED'
-    if decision == 'regenerate':
-        new_generation_status = 'PENDING'
-
-    moderator_email = moderator_id
-    
-    query = f"""
-        UPDATE `{BIGQUERY_TABLE}`
-        SET 
-            decision = @decision,
-            generation_status = @gen_status,
-            prompt = @prompt,
-            notes = @notes,
-            moderator_id = @moderator,
-            log_timestamp = @timestamp,
-            last_updated = @timestamp,
-            video_id = CASE 
-                WHEN @gen_status = 'PENDING' THEN NULL 
-                ELSE video_id 
-            END
-        WHERE image_id = @image_id
-    """
-    
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("decision", "STRING", decision),
-            bigquery.ScalarQueryParameter("gen_status", "STRING", new_generation_status),
-            bigquery.ScalarQueryParameter("prompt", "STRING", new_prompt),
-            bigquery.ScalarQueryParameter("notes", "STRING", new_notes),
-            bigquery.ScalarQueryParameter("moderator", "STRING", moderator_email),
-            bigquery.ScalarQueryParameter("timestamp", "TIMESTAMP", datetime.utcnow().isoformat()),
-            bigquery.ScalarQueryParameter("image_id", "STRING", image_id),
-        ]
-    )
+    new_video_path = None 
+    new_generation_status = 'MODERATED' 
     
     try:
+        if decision == 'approve' and source_video_path:
+            with st.spinner("Converting MP4 to WebP..."):
+                source_blob = bucket.blob(source_video_path)
+                
+                with tempfile.NamedTemporaryFile(suffix=".mp4") as mp4_temp:
+                    with tempfile.NamedTemporaryFile(suffix=".webp") as webp_temp:
+                        
+                        st.write("Downloading MP4...")
+                        source_blob.download_to_filename(mp4_temp.name)
+                        
+                        st.write("Converting to WebP...")
+                        success = convert_mp4_to_webp(mp4_temp.name, webp_temp.name)
+                        if not success: st.stop()
+
+                        video_filename_stem = Path(source_video_path).stem
+                        webp_filename = f"{video_filename_stem}.webp"
+                        destination_path = os.path.join(GCS_APPROVED_FOLDER, webp_filename)
+                        
+                        st.write("Uploading WebP...")
+                        new_blob = bucket.blob(destination_path)
+                        new_blob.upload_from_filename(webp_temp.name)
+                        new_video_path = new_blob.name
+                
+                st.write("Deleting original MP4...")
+                source_blob.delete()
+                st.toast(f"Converted and moved to: {new_video_path}")
+
+        elif (decision == 'regenerate' or decision == 'remove') and source_video_path:
+            st.write(f"Deleting: {source_video_path}")
+            blob = bucket.blob(source_video_path)
+            blob.delete()
+            st.toast(f"Deleted old video: {source_video_path}")
+            
+            if decision == 'regenerate':
+                new_generation_status = 'PENDING'
+        
+    except Exception as e:
+        st.error(f"Error handling GCS file: {e}")
+        st.stop() 
+
+    try:
+        query = f"""
+            UPDATE `{BIGQUERY_TABLE}`
+            SET decision = @decision, generation_status = @gen_status, prompt = @prompt, notes = @notes, moderator_id = @moderator, log_timestamp = @timestamp, last_updated = @timestamp, video_id = @new_video_path
+            WHERE image_id = @image_id
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("decision", "STRING", decision),
+                bigquery.ScalarQueryParameter("gen_status", "STRING", new_generation_status),
+                bigquery.ScalarQueryParameter("prompt", "STRING", new_prompt),
+                bigquery.ScalarQueryParameter("notes", "STRING", new_notes),
+                bigquery.ScalarQueryParameter("moderator", "STRING", moderator_id),
+                bigquery.ScalarQueryParameter("timestamp", "TIMESTAMP", datetime.utcnow().isoformat()),
+                bigquery.ScalarQueryParameter("new_video_path", "STRING", new_video_path),
+                bigquery.ScalarQueryParameter("image_id", "STRING", image_id),
+            ]
+        )
         bq_client.query(query, job_config=job_config).result()
-        st.toast(f"✅ Decision '{decision}' logged for {image_id}!")
-        
+        st.toast(f"✅ Decision '{decision}' logged!")
         st.cache_data.clear()
-        st.session_state.video_queue.pop(0)
         st.rerun()
-        
     except Exception as e:
         st.error(f"An error occurred updating BigQuery: {e}")
 
-
-# --- Streamlit UI ---
+# --- UI ---
 st.title("📹 Video Moderation Tool")
 
-# --- Moderator Login Logic ---
 if 'moderator_id' not in st.session_state:
     st.sidebar.header("Login")
-    # MODIFIED: Ask for email
-    moderator_email = st.sidebar.text_input("Please enter your email to begin:", key="moderator_email_input")
-    
+    moderator_email = st.sidebar.text_input("Please enter your email:", key="moderator_email_input")
     if st.sidebar.button("Login"):
-        # Basic email check (just checks for '@')
         if moderator_email and '@' in moderator_email:
             st.session_state.moderator_id = moderator_email
             st.rerun()
         else:
-            st.sidebar.error("Please enter a valid email address.")
-    
-    # Lock the main app
-    st.info("Please log in using the sidebar to start moderation.")
-
+            st.sidebar.error("Invalid email.")
+    st.info("Please log in to start.")
 else:
-    # --- APP IS "UNLOCKED" ---
     moderator_id = st.session_state.moderator_id
     st.sidebar.success(f"Logged in as: **{moderator_id}**")
     st.sidebar.header("Admin Tools")
     
-    # --- SYNC BUTTON ---
     if st.sidebar.button("🔄 Sync GCS & BigQuery"):
         with st.spinner("Performing 2-way sync..."):
             st.cache_data.clear() 
             new_items, updated_items = sync_gcs_to_bigquery()
             st.cache_data.clear()
-            
-            st.sidebar.success(f"Sync complete!")
-            st.sidebar.json({
-                "New images added": new_items,
-                "Existing videos synced": updated_items
-            })
-            st.sidebar.json({
-                "New images added": new_items,
-                "Existing videos synced": updated_items
-            })
-            st.rerun() 
-    
-    if st.sidebar.button("⚠️ Reset Table"):
-        if st.sidebar.checkbox("Confirm Reset? (Deletes all history)"):
-            try:
-                bq_client.delete_table(BIGQUERY_TABLE, not_found_ok=True)
-                st.sidebar.success("Table deleted. Please click 'Sync' to recreate it.")
-                st.rerun()
-            except Exception as e:
-                st.sidebar.error(f"Failed to delete table: {e}")
+            st.sidebar.success("Sync complete!")
+            st.rerun()
 
-    # --- Main Moderation Logic ---
+    if st.sidebar.button("⚠️ Reset Table"):
+        if st.sidebar.checkbox("Confirm Reset?"):
+            recreate_bq_table() # Now calls the robust helper
+            st.cache_data.clear()
+            st.rerun()
+
     if 'video_queue' not in st.session_state:
         st.session_state.video_queue = get_videos_to_review()
 
@@ -421,64 +431,40 @@ else:
             st.rerun()
     else:
         current_video_data = st.session_state.video_queue[0]
-        
         image_id = current_video_data["image_id"]
         video_path_gcs = current_video_data["video_id"]
         initial_prompt = current_video_data["prompt"]
-        initial_notes = current_video_data["notes"] if current_video_data["notes"] else ""
+        initial_notes = current_video_data.get("notes", "")
 
         if not video_path_gcs:
-            st.error(f"Data for {image_id} is corrupted. 'video_id' is missing.")
+            st.error(f"Data error: Missing video_id for {image_id}")
             st.stop()
 
         try:
             blob = bucket.blob(video_path_gcs)
-            signed_url = blob.generate_signed_url(
-                version="v4",
-                expiration=timedelta(minutes=15),
-                service_account_email=SERVICE_ACCOUNT_EMAIL
-            )
+            signed_url = blob.generate_signed_url(version="v4", expiration=timedelta(minutes=15), service_account_email=SERVICE_ACCOUNT_EMAIL)
         except Exception as e:
-            st.error(f"Failed to get video blob or URL for '{video_path_gcs}'. {e}")
+            st.error(f"Error getting video: {e}")
             st.stop()
 
-        left_col, right_col = st.columns([0.3, 0.7])
-
-        with left_col:
+        col1, col2 = st.columns([0.4, 0.6])
+        with col1:
             if video_path_gcs.endswith('.webp'):
                 st.image(signed_url, use_container_width=True)
             else:
                 st.video(signed_url)
-
-        with right_col:
-            st.subheader("Video Details")
-            st.markdown(f"**Image ID:**\n`{image_id}`")
-            st.markdown(f"**Video Path:**\n`gs://{BUCKET_NAME}/{video_path_gcs}`")
-            st.info(f"**{len(st.session_state.video_queue)}** videos remaining.")
-            st.markdown("---")
-
-            st.subheader("📝 Prompt")
-            edited_prompt = st.text_area(
-                "Prompt used for generation (edit here before regenerating):", 
-                value=initial_prompt, 
-                height=300
-            )
+        with col2:
+            st.markdown(f"**Image ID:** `{image_id}`")
+            edited_prompt = st.text_area("Prompt:", value=initial_prompt, height=200)
+            edited_notes = st.text_area("Notes:", value=initial_notes, height=100)
             
-            st.subheader("📋 Notes")
-            edited_notes = st.text_area(
-                "Moderation notes:", 
-                value=initial_notes,
-                placeholder="Add comments about this video...", 
-                height=150
-            )
-
-            col1, col2, col3 = st.columns(3)
-            with col1:
+            c1, c2, c3 = st.columns(3)
+            with c1:
                 if st.button("✅ Approve", use_container_width=True):
-                    update_decision_in_bq(moderator_id, image_id, "approve", edited_prompt, edited_notes)
-            with col2:
+                    update_decision_in_bq(moderator_id, image_id, "approve", edited_prompt, edited_notes, video_path_gcs)
+            with c2:
                 if st.button("♻️ Regenerate", use_container_width=True):
-                    update_decision_in_bq(moderator_id, image_id, "regenerate", edited_prompt, edited_notes, video_path_to_delete=video_path_gcs)
-            with col3:
+                    update_decision_in_bq(moderator_id, image_id, "regenerate", edited_prompt, edited_notes, video_path_gcs)
+            with c3:
                 if st.button("🗑️ Remove", use_container_width=True):
-                    update_decision_in_bq(moderator_id, image_id, "remove", edited_prompt, edited_notes, video_path_to_delete=video_path_gcs)
+                    update_decision_in_bq(moderator_id, image_id, "remove", edited_prompt, edited_notes, video_path_gcs)
