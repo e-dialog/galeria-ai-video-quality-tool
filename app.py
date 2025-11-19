@@ -164,7 +164,7 @@ def sync_gcs_to_bigquery():
     """
     Compares GCS input/output folders with BigQuery table.
     1. Inserts new 'PENDING' rows from GCS inputs.
-    2. Updates 'COMPLETED' status for existing rows found in GCS outputs.
+    2. Updates 'APPROVAL_PENDING' status for existing rows found in GCS outputs.
     """
     storage_client, bq_client = get_gcp_clients()
     gcs_input_map = get_gcs_input_images(storage_client, BUCKET_NAME, GCS_INPUT_PREFIX)
@@ -219,7 +219,7 @@ def sync_gcs_to_bigquery():
                 query = f"""
                     UPDATE `{BIGQUERY_TABLE}`
                     SET 
-                        generation_status = 'COMPLETED',
+                        generation_status = 'APPROVAL_PENDING',
                         video_id = @video_path,
                         last_updated = @timestamp
                     WHERE image_id = @image_id
@@ -253,7 +253,7 @@ def get_videos_to_review():
                 prompt,
                 notes
             FROM `{BIGQUERY_TABLE}`
-            WHERE generation_status = 'COMPLETED'
+            WHERE generation_status = 'APPROVAL_PENDING'
               AND decision IS NULL
             ORDER BY last_updated ASC
         """
