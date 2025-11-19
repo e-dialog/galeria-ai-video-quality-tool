@@ -181,22 +181,47 @@ def sync_gcs_to_bigquery():
             source_path = gcs_input_map[image_id]
             gtin = get_gtin_from_path(image_id)
             
+            # Check if video already exists to avoid immediate UPDATE (which fails on streaming buffer)
+            initial_status = "PENDING"
+            initial_video_id = None
+            
+            # Check if we have a matching video in the output map
+            # We need to check by stem
+            image_stem = Path(image_id).stem
+            # Find video with same stem
+            for vid_stem, vid_path in gcs_output_map.items():
+                if vid_stem == image_stem:
+                    initial_status = "APPROVAL_PENDING"
+                    initial_video_id = vid_path
+                    break
+
             rows_to_insert.append({
                 "image_id": image_id,
                 "gtin": gtin,
                 "source_gcs_path": source_path,
-                "generation_status": "PENDING",
+                "generation_status": initial_status,
+                "video_id": initial_video_id,
                 "generation_attempts": 0,
                 "last_updated": datetime.utcnow().isoformat(),
-                "prompt": get_default_prompt(source_path)
+                "prompt": get_default_prompt(source_path),
+                "decision": None,
+                "notes": None,
+                "moderator_id": None,
+                "log_timestamp": None
             })
             
         try:
-            errors = bq_client.insert_rows_json(BIGQUERY_TABLE, rows_to_insert)
-            if errors:
-                st.error(f"Error inserting new rows: {errors}")
+            # Use Load Job instead of Streaming Insert to avoid "streaming buffer" locking rows from UPDATE
+            job_config = bigquery.LoadJobConfig(
+                write_disposition="WRITE_APPEND",
+                schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
+                autodetect=True, # Or specify schema if needed, but autodetect usually works for JSON
+            )
+            job = bq_client.load_table_from_json(rows_to_insert, BIGQUERY_TABLE, job_config=job_config)
+            job.result() # Wait for job to complete
+            st.success(f"Successfully loaded {len(rows_to_insert)} new rows.")
         except Exception as e:
-            st.error(f"An error occurred during BQ insert: {e}")
+            st.error(f"An error occurred during BQ load: {e}")
             
     # Task 2: "Back-fill" - Find existing rows to update
     st.write("Checking for existing videos to sync...")
