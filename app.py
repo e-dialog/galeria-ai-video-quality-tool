@@ -93,13 +93,13 @@ def get_gtin_from_path(image_name: str) -> str | None:
 
 # --- Helper 2: Scan GCS Inputs (for Sync) ---
 @st.cache_data(ttl=300)
-def get_gcs_input_images(storage_client, bucket_name, prefix):
+def get_gcs_input_images(_storage_client, bucket_name, prefix):
     """
     Scans GCS input prefix and returns a dict of
     {image_id: "full_gcs_path"} for all valid images.
     """
     st.write(f"Scanning GCS Input: `gs://{bucket_name}/{prefix}`...")
-    blobs = storage_client.list_blobs(bucket_name, prefix=prefix)
+    blobs = _storage_client.list_blobs(bucket_name, prefix=prefix)
     gcs_images = {}
     valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
     
@@ -114,7 +114,7 @@ def get_gcs_input_images(storage_client, bucket_name, prefix):
 
 # --- Helper 3: Scan GCS Outputs (for Sync) ---
 @st.cache_data(ttl=300)
-def get_gcs_output_videos(storage_client, bucket_name, prefixes):
+def get_gcs_output_videos(_storage_client, bucket_name, prefixes):
     """
     Scans GCS output prefixes and returns a dict of
     {video_stem: "full_gcs_path"} for all valid videos.
@@ -124,7 +124,7 @@ def get_gcs_output_videos(storage_client, bucket_name, prefixes):
     valid_extensions = ('.mp4', '.webp')
     
     for prefix in prefixes:
-        blobs = storage_client.list_blobs(bucket_name, prefix=prefix)
+        blobs = _storage_client.list_blobs(bucket_name, prefix=prefix)
         for blob in blobs:
             if blob.name.endswith(valid_extensions):
                 video_stem = Path(blob.name).stem
@@ -136,7 +136,7 @@ def get_gcs_output_videos(storage_client, bucket_name, prefixes):
 
 # --- Helper 4: Get All BQ Rows (for Sync) ---
 @st.cache_data(ttl=300)
-def get_bq_all_rows(bq_client, table_id):
+def get_bq_all_rows(_bq_client, table_id):
     """Queries BigQuery for all image_ids and their status."""
     st.write("Querying BigQuery for all existing rows...")
     try:
@@ -148,7 +148,7 @@ def get_bq_all_rows(bq_client, table_id):
             FROM `{table_id}` 
             WHERE image_id IS NOT NULL
         """
-        results = bq_client.query(query).result()
+        results = _bq_client.query(query).result()
         row_map = {row.image_id: dict(row) for row in results}
         st.write(f"Found {len(row_map)} existing rows in BigQuery.")
         return row_map
