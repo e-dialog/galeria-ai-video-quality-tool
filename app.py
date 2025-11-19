@@ -235,10 +235,6 @@ def sync_gcs_to_bigquery():
             
             if bq_row.get('generation_status') == 'PENDING' or bq_row.get('video_id') is None:
                 updates_to_run.append((image_id, video_path))
-        else:
-            # Debug mismatch
-            if len(updates_to_run) < 5: # Only show first few mismatches
-                st.write(f"Debug: Video stem '{video_stem}' not found in BQ image stems.")
 
     if updates_to_run:
         st.write(f"Found {len(updates_to_run)} videos to sync. Updating BQ...")
@@ -260,8 +256,12 @@ def sync_gcs_to_bigquery():
                     ]
                 )
                 bq_client.query(query, job_config=job_config).result()
+                bq_client.query(query, job_config=job_config).result()
             except Exception as e:
-                st.error(f"Failed to back-fill {image_id}: {e}")
+                if "streaming buffer" in str(e):
+                    st.warning(f"Skipped update for {image_id} due to streaming buffer lock. Use 'Reset Table' if this persists.")
+                else:
+                    st.error(f"Failed to back-fill {image_id}: {e}")
                 
     return len(rows_to_insert), len(updates_to_run)
 
@@ -394,8 +394,20 @@ else:
                 "New images added": new_items,
                 "Existing videos synced": updated_items
             })
+            st.sidebar.json({
+                "New images added": new_items,
+                "Existing videos synced": updated_items
+            })
             st.rerun() 
-    # --- END SYNC BUTTON ---
+    
+    if st.sidebar.button("⚠️ Reset Table"):
+        if st.sidebar.checkbox("Confirm Reset? (Deletes all history)"):
+            try:
+                bq_client.delete_table(BIGQUERY_TABLE, not_found_ok=True)
+                st.sidebar.success("Table deleted. Please click 'Sync' to recreate it.")
+                st.rerun()
+            except Exception as e:
+                st.sidebar.error(f"Failed to delete table: {e}")
 
     # --- Main Moderation Logic ---
     if 'video_queue' not in st.session_state:
