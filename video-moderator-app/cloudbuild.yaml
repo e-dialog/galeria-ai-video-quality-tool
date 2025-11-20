@@ -1,5 +1,6 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
+    dir: 'video-moderator-app'
     args:
       - build
       - '-t'
@@ -7,11 +8,13 @@ steps:
       - '.'
 
   - name: 'gcr.io/cloud-builders/docker'
+    dir: 'video-moderator-app'
     args:
       - push
       - 'europe-docker.pkg.dev/$PROJECT_ID/galeria-repo/galeria-ai-video-quality-tool:latest'
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    dir: 'video-moderator-app'
     entrypoint: gcloud
     args:
       - run
