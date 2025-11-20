@@ -20,7 +20,7 @@ resource "google_cloud_tasks_queue" "provisioned_throughput_rate_limiter" {
 
     uri_override {
       scheme = "HTTPS"
-      host   = google_cloudfunctions2_function.video_generator.service_config[0].uri
+      host   = replace(google_cloudfunctions2_function.video_generator.service_config[0].uri, "https://", "")
     }
 
     oidc_token {

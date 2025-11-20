@@ -125,11 +125,13 @@ def generate_video(gtin: str, image_gcs_uri: str) -> str:
         if generated_videos is not None:
             print("Video generation completed successfully.")
             generated_video = generated_videos[0]
+            
+            print(generated_video.video.uri) # type: ignore
 
             # Upload the generated video to GCS
             # Move the original image to the processed bucket
 
-    return "gs://{OUTPUT_GCS_BUCKET}/{image_id}/generated_videos/001.mp4"
+    return f"gs://{OUTPUT_GCS_BUCKET}/{gtin}/generated_videos/001.mp4"
 
 
 def main(request):
