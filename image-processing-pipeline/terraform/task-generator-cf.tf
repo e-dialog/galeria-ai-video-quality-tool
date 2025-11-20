@@ -6,7 +6,7 @@ resource "google_cloudfunctions2_function" "task_generator" {
   build_config {
     runtime     = "python312"
     entry_point = "main"
-    service_account = "terraform-service-agent@${local.project_id}.iam.gserviceaccount.com"
+    service_account = data.google_service_account.terraform_service_agent.id
 
     source {
       storage_source {

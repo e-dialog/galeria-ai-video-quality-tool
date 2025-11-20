@@ -15,6 +15,10 @@ data "google_storage_bucket" "terraform_state_bucket" {
   name = "terraform-${var.project_id}"
 }
 
+data "google_service_account" "terraform_service_agent" {
+  account_id = "terraform-service-agent"
+}
+
 locals {
   region     = var.default_region
   project_id = var.project_id
