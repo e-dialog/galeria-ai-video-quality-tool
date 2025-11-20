@@ -1,0 +1,50 @@
+[
+    {
+        "name": "gtin",
+        "mode": "REQUIRED",
+        "type": "STRING",
+        "description": "The main identifier for image assets"
+    },
+    {
+        "name": "status",
+        "mode": "REQUIRED",
+        "type": "STRING",
+        "description": "The status of the image processing. One of 'QUEUED_FOR_VIDEO_GENERATION', 'GENERATING_VIDEO', 'VIDEO_GENERATION_COMPLETED', 'VIDEO_GENERATION_FAILED', 'VIDEO_APPROVED', 'VIDEO_REJECTED'"
+    },
+    {
+        "name": "image_gcs_uri",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The GCS URI of the image asset"
+    },
+    {
+        "name": "video_gcs_uri",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The GCS URI of the generated video asset"
+    },
+    {
+        "name": "prompt",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The prompt used for AI generation of the video"
+    },
+    {
+        "name": "notes",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "Notes or comments about the video quality"
+    },
+    {
+        "name": "moderator_id",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The ID of the user who moderated the asset"
+    },
+    {
+        "name": "timestamp",
+        "mode": "NULLABLE",
+        "type": "TIMESTAMP",
+        "description": "The timestamp of when this row was last updated"
+    }
+]
