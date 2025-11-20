@@ -28,6 +28,8 @@ resource "google_cloud_tasks_queue" "provisioned_throughput_rate_limiter" {
       audience              = google_cloudfunctions2_function.video_generator.service_config[0].uri
     }
   }
+
+  depends_on = [ google_cloudfunctions2_function.video_generator ]
 }
 
 resource "google_project_iam_member" "task_generator_cloudtasks_enqueuer_role" {
