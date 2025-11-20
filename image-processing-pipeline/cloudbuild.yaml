@@ -39,3 +39,7 @@ steps:
     ]
 
     waitFor: [ 'initialize-terraform' ]
+
+logsBucket: 'gs://terraform-${PROJECT_ID}/logs'
+options:
+  logging: GCS_ONLY
