@@ -113,28 +113,30 @@ def organize_storage_files(gtin: str, image_gcs_uri: str, video_gcs_uri: str) ->
     processed_video_bucket: Bucket = storage_client.bucket(OUTPUT_GCS_BUCKET)
     
     source_image_blob: Blob = Blob.from_uri(image_gcs_uri, client=storage_client)
+    source_image_name: str = f"{gtin}/{image_gcs_uri.split('/')[-1]}"
     input_asset_bucket.copy_blob(
         blob=source_image_blob,
         destination_bucket=processed_video_bucket,
-        new_name=f"{gtin}/{image_gcs_uri.split('/')[-1]}"
+        new_name=source_image_name
     )
     
     source_image_blob.delete()
-    
-    print(f"Source moved to processed bucket at: gs://{OUTPUT_GCS_BUCKET}/{gtin}/{image_gcs_uri.split('/')[-1]}")
+
+    print(f"Source moved to processed bucket at: gs://{OUTPUT_GCS_BUCKET}/{source_image_name}")
     
     generated_video_blob: Blob = Blob.from_uri(video_gcs_uri, client=storage_client)
+    generated_video_name: str = f"{gtin}/{source_image_name.split('/')[-1].split('.')[0]}_{datetime.now().isoformat()}.mp4"
     processed_video_bucket.copy_blob(
         blob=generated_video_blob,
         destination_bucket=processed_video_bucket,
-        new_name=f"{gtin}/{gtin}.mp4"
+        new_name=generated_video_name
     )
     
     generated_video_blob.delete()
     
-    print(f"Video moved after generating and stored at: gs://{OUTPUT_GCS_BUCKET}/{gtin}/{gtin}.mp4")
-    
-    return f"gs://{OUTPUT_GCS_BUCKET}/{gtin}/{gtin}.mp4", f"gs://{OUTPUT_GCS_BUCKET}/{gtin}/{image_gcs_uri.split('/')[-1]}"
+    print(f"Video moved after generating and stored at: gs://{OUTPUT_GCS_BUCKET}/{generated_video_name}")
+
+    return f"gs://{OUTPUT_GCS_BUCKET}/{generated_video_name}", f"gs://{OUTPUT_GCS_BUCKET}/{source_image_name}"  
 
 def generate_video(gtin: str, image_gcs_uri: str, mime_type: str, aspect_ratio: str) -> str:
     """Generates a video from the given image"""
