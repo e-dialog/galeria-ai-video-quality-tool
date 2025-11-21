@@ -37,10 +37,10 @@ resource "google_cloudfunctions2_function" "task_generator" {
       value     = local.galeria_input_assets_bucket_name
     }
 
-    # FIXME: Hardcoded to only listen to images in the models/ folder
     event_filters {
-      attribute = "prefix"
-      value     = local.models_only_prefix
+      attribute = "subject"
+      value     = "objects/${local.models_only_prefix}*"
+      operator  = "match-path-pattern"
     }
   }
 }
