@@ -67,6 +67,9 @@ def enqueue_task(gtin: str, gcs_uri: str) -> None:
         parent=parent,
         task=Task(
             http_request=HttpRequest(
+                http_method="POST",
+                url="https://placeholder-host/", # We override this in the Terraform config with the actual endpoint
+                headers={"Content-Type": "application/json"},
                 body=json.dumps(
                     {
                         "gtin": gtin,
