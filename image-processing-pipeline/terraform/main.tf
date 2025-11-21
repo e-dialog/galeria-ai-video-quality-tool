@@ -28,6 +28,7 @@ locals {
 
   galeria_input_assets_bucket_name     = "galeria-veo3-input-assets-${local.project_id}"
   galeria_processed_assets_bucket_name = "galeria-veo3-processed-assets-${local.project_id}"
+  galeria_approved_assets_bucket_name  = "galeria-veo3-approved-assets-${local.project_id}"
 
   general_input_assets_bucket_name     = "general-veo3-input-assets-${local.project_id}"
   general_processed_assets_bucket_name = "general-veo3-processed-assets-${local.project_id}"
