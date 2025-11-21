@@ -15,6 +15,9 @@ data "google_storage_bucket" "terraform_state_bucket" {
   name = "terraform-${var.project_id}"
 }
 
+data "google_storage_project_service_account" "gcs_account" {
+}
+
 data "google_service_account" "terraform_service_agent" {
   account_id = "terraform-service-agent"
 }

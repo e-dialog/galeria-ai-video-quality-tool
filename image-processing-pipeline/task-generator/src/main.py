@@ -87,6 +87,8 @@ def enqueue_task(gtin: str, gcs_uri: str) -> None:
 
 
 def main(event: dict, context: dict) -> tuple[str, int]:
+    print(event)
+    
     file_name: str | None = event.get('name')
     bucket_name: str | None = event.get('bucket')
 

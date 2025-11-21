@@ -30,19 +30,25 @@ resource "google_cloudfunctions2_function" "task_generator" {
 
   event_trigger {
     trigger_region = local.region
-    event_type     = "google.cloud.storage.object.v1.finalized"
-
-    event_filters {
-      attribute = "bucket"
-      value     = local.galeria_input_assets_bucket_name
-    }
-
-    event_filters {
-      attribute = "resource"
-      value     = "projects/_/buckets/${local.galeria_input_assets_bucket_name}/objects/${local.models_only_prefix}*"
-      operator  = "match-path-pattern"
-    }
+    event_type   = "google.cloud.pubsub.topic.v1.messagePublished"
+    pubsub_topic = google_pubsub_topic.new_asset_notification_topic.id
+    retry_policy = "RETRY_POLICY_RETRY"
   }
+}
+
+resource "google_pubsub_topic" "new_asset_notification_topic" {
+  name = "new-asset-notifications"
+}
+
+resource "google_storage_notification" "notification" {
+  bucket         = google_storage_bucket.galeria_input_assets_bucket.name
+  payload_format = "JSON_API_V1"
+  topic          = google_pubsub_topic.new_asset_notification_topic.id
+  event_types    = ["OBJECT_FINALIZE"]
+
+  object_name_prefix = local.models_only_prefix
+
+  depends_on = [google_pubsub_topic_iam_binding.gcs_service_agent_publisher_role]
 }
 
 data "archive_file" "task_generator_cf_archive" {
