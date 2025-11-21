@@ -7,6 +7,7 @@
 
 import json
 import os
+import base64
 from datetime import datetime
 
 from google.cloud.bigquery import Client as BigQueryClient
@@ -27,17 +28,10 @@ assert BIGQUERY_VIDEO_LOGS_TABLE_ID is not None, "BIGQUERY_VIDEO_LOGS_TABLE_ID e
 bigquery_client: BigQueryClient = BigQueryClient()
 cloud_tasks_client: CloudTasksClient = CloudTasksClient()
 
-
-# Example GCS Event Structure (for reference)
-# event = {
-#     "kind": "storage#object",
-#     "id": "bucket-name/new_assets/image1.jpg/1678886400000000",
-#     "name": "new_assets/image1.jpg",
-#     "bucket": "your-bucket-name",
-#     "contentType": "image/jpeg",
-#     "timeCreated": "2023-03-15T00:00:00.000Z",
-#     ...
-# }
+def unpack_event_message(event) -> dict:
+    """Unpacks the Pub/Sub message and returns the email content as a dictionary"""
+    data: str = base64.b64decode(event['data']).decode('utf-8')
+    return json.loads(data)
 
 def log(gtin: str, image_gcs_uri: str) -> None:
     """Logs the video generation event to BigQuery."""
@@ -87,10 +81,11 @@ def enqueue_task(gtin: str, gcs_uri: str) -> None:
 
 
 def main(event: dict, context: dict) -> tuple[str, int]:
-    print(event)
+    data: dict = unpack_event_message(event)
+    print(data)
     
-    file_name: str | None = event.get('name')
-    bucket_name: str | None = event.get('bucket')
+    file_name: str | None = data.get('name')
+    bucket_name: str | None = data.get('bucket')
 
     assert file_name is not None, "File name is required in the event"
     assert bucket_name is not None, "Bucket name is required in the event"
