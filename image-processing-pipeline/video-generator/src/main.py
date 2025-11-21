@@ -172,7 +172,7 @@ def generate_video(gtin: str, image_gcs_uri: str, mime_type: str, aspect_ratio: 
     return generated_video.video.uri  # type: ignore
 
 
-def main(request):
+def main(request) -> tuple[str, int]:
     data: dict = request.get_json(silent=True)
 
     gtin: str | None = data.get('gtin')
@@ -194,6 +194,8 @@ def main(request):
     
     video_gcs_uri, image_gcs_uri = organize_storage_files(gtin, image_gcs_uri, video_gcs_uri)
     log(gtin, image_gcs_uri, video_gcs_uri)
+    
+    return "OK", 200
 
 
 # For local testing purposes. Run `python main.py`
