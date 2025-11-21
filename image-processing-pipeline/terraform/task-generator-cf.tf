@@ -4,8 +4,8 @@ resource "google_cloudfunctions2_function" "task_generator" {
   description = "GCS listener, BigQuery logger, and Cloud Tasks enqueuer."
 
   build_config {
-    runtime     = "python312"
-    entry_point = "main"
+    runtime         = "python312"
+    entry_point     = "main"
     service_account = data.google_service_account.terraform_service_agent.id
 
     source {
@@ -38,8 +38,8 @@ resource "google_cloudfunctions2_function" "task_generator" {
     }
 
     event_filters {
-      attribute = "subject"
-      value     = "objects/${local.models_only_prefix}*"
+      attribute = "resource"
+      value     = "projects/_/buckets/${local.galeria_input_assets_bucket_name}/objects/${local.models_only_prefix}*"
       operator  = "match-path-pattern"
     }
   }
