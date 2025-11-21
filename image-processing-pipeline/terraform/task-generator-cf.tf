@@ -20,6 +20,10 @@ resource "google_cloudfunctions2_function" "task_generator" {
     service_account_email = local.image_processing_pipeline_sa_email
     ingress_settings      = "ALLOW_ALL"
 
+    max_instance_count = 1000
+    max_instance_request_concurrency = 5
+    available_memory    = "1024M"
+
     environment_variables = {
       PROJECT_ID                   = local.project_id
       TASK_QUEUE_NAME              = google_cloud_tasks_queue.provisioned_throughput_rate_limiter.name
