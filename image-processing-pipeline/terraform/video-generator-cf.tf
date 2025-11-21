@@ -27,6 +27,7 @@ resource "google_cloudfunctions2_function" "video_generator" {
     environment_variables = {
       PROJECT_NUMBER            = local.project_number
       PROJECT_ID                = local.project_id
+      INPUT_GCS_BUCKET          = local.galeria_input_assets_bucket_name
       OUTPUT_GCS_BUCKET         = local.galeria_processed_assets_bucket_name
       BIGQUERY_VIDEO_LOGS_TABLE_ID = "${local.project_id}.image_processing_logs.galeria_veo3_video_ingestion_events"
     }

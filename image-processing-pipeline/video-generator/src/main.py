@@ -9,11 +9,11 @@ import os
 import time
 from datetime import datetime
 
-from google.cloud.bigquery import Client as BigQueryClient
+from google.cloud.bigquery import Table, Client as BigQueryClient
 from google.cloud.storage import Blob, Bucket
 from google.cloud.storage import Client as StorageClient
 from google.genai import Client as GenAIClient
-from google.genai.types import (GeneratedVideo, GenerateVideosConfig,
+from google.genai.types import (GeneratedVideo, GenerateVideosConfig, HttpOptions,
                                 GenerateVideosOperation,
                                 GenerateVideosResponse, GenerateVideosSource,
                                 Image)
@@ -53,11 +53,13 @@ DEFAULT_MODEL_PROMPT: str = """
 # Environment variables
 PROJECT_NUMBER: str | None = os.getenv("PROJECT_NUMBER")
 PROJECT_ID: str | None = os.getenv("PROJECT_ID")
+INPUT_GCS_BUCKET: str | None = os.getenv("INPUT_GCS_BUCKET")
 OUTPUT_GCS_BUCKET: str | None = os.getenv("OUTPUT_GCS_BUCKET")
 BIGQUERY_VIDEO_LOGS_TABLE_ID: str | None = os.environ.get("BIGQUERY_VIDEO_LOGS_TABLE_ID")
 
 assert PROJECT_NUMBER is not None, "PROJECT_NUMBER environment variable is required"
 assert PROJECT_ID is not None, "PROJECT_ID environment variable is required"
+assert INPUT_GCS_BUCKET is not None, "INPUT_GCS_BUCKET environment variable is required"
 assert OUTPUT_GCS_BUCKET is not None, "OUTPUT_GCS_BUCKET environment variable is required"
 assert BIGQUERY_VIDEO_LOGS_TABLE_ID is not None, "BIGQUERY_VIDEO_LOGS_TABLE_ID environment variable is required"
 
@@ -67,24 +69,35 @@ bigquery_client: BigQueryClient = BigQueryClient()
 genai_client: GenAIClient = GenAIClient(
     vertexai=True,
     project=PROJECT_ID,
-    location='europe-west4'
+    location='us-central1',
+    http_options=HttpOptions(
+        api_version="v1",
+        headers={
+            # Important! This ensures we do not overshoot on the provisioned throughput capacity
+            # https://docs.cloud.google.com/vertex-ai/generative-ai/docs/provisioned-throughput/use-provisioned-throughput#only-provisioned-throughput
+            "X-Vertex-AI-LLM-Request-Type": "dedicated"
+        }
+    )
 )
 
 storage_client: StorageClient = StorageClient()
 
 
-def log(gtin: str, image_gcs_uri: str) -> None:
+def log(gtin: str, image_gcs_uri: str, video_gcs_uri: str) -> None:
     """Logs the video generation event to BigQuery."""
     ingestion_time: str = datetime.now().isoformat()
 
     try:
+        table: Table = bigquery_client.get_table(BIGQUERY_VIDEO_LOGS_TABLE_ID)  # type: ignore
         bigquery_client.insert_rows(
-            table=BIGQUERY_VIDEO_LOGS_TABLE_ID,  # type: ignore
+            table=table,
             rows=[
                 {
                     "gtin": gtin,
-                    "status": "QUEUED_FOR_VIDEO_GENERATION",
+                    "status": "VIDEO_GENERATION_COMPLETED",
                     "image_gcs_uri": image_gcs_uri,
+                    "video_gcs_uri": video_gcs_uri,
+                    "prompt": DEFAULT_MODEL_PROMPT,
                     "timestamp": ingestion_time,
                 }
             ]
@@ -94,8 +107,36 @@ def log(gtin: str, image_gcs_uri: str) -> None:
         print(f"Error logging to BigQuery: {e}")
         # Log the error, but do not raise to avoid interrupting the main flow
 
+def organize_storage_files(gtin: str, image_gcs_uri: str, video_gcs_uri: str) -> tuple[str, str]:
+    """Organizes the storage files by moving the source image and generated video to their respective folders."""
+    input_asset_bucket: Bucket = storage_client.bucket(INPUT_GCS_BUCKET)
+    processed_video_bucket: Bucket = storage_client.bucket(OUTPUT_GCS_BUCKET)
+    
+    source_image_blob: Blob = Blob.from_uri(image_gcs_uri, client=storage_client)
+    input_asset_bucket.copy_blob(
+        blob=source_image_blob,
+        destination_bucket=processed_video_bucket,
+        new_name=f"{gtin}/{image_gcs_uri.split('/')[-1]}"
+    )
+    
+    source_image_blob.delete()
+    
+    print(f"Source moved to processed bucket at: gs://{OUTPUT_GCS_BUCKET}/{gtin}/{image_gcs_uri.split('/')[-1]}")
+    
+    generated_video_blob: Blob = Blob.from_uri(video_gcs_uri, client=storage_client)
+    processed_video_bucket.copy_blob(
+        blob=generated_video_blob,
+        destination_bucket=processed_video_bucket,
+        new_name=f"{gtin}/{gtin}.mp4"
+    )
+    
+    generated_video_blob.delete()
+    
+    print(f"Video moved after generating and stored at: gs://{OUTPUT_GCS_BUCKET}/{gtin}/{gtin}.mp4")
+    
+    return f"gs://{OUTPUT_GCS_BUCKET}/{gtin}/{gtin}.mp4", f"gs://{OUTPUT_GCS_BUCKET}/{gtin}/{image_gcs_uri.split('/')[-1]}"
 
-def generate_video(gtin: str, image_gcs_uri: str) -> str:
+def generate_video(gtin: str, image_gcs_uri: str, mime_type: str, aspect_ratio: str) -> str:
     """Generates a video from the given image"""
 
     operation: GenerateVideosOperation = genai_client.models.generate_videos(
@@ -103,13 +144,16 @@ def generate_video(gtin: str, image_gcs_uri: str) -> str:
 
         source=GenerateVideosSource(
             prompt=DEFAULT_MODEL_PROMPT,
-            image=Image(gcs_uri=image_gcs_uri)
+            image=Image(gcs_uri=image_gcs_uri, mime_type=mime_type)
         ),
 
         config=GenerateVideosConfig(
             number_of_videos=1,
             duration_seconds=8,
-            output_gcs_uri=f"gs://{OUTPUT_GCS_BUCKET}/{gtin}/generated_videos/001.mp4",
+            output_gcs_uri=f"gs://{OUTPUT_GCS_BUCKET}/{gtin}/",
+            aspect_ratio=aspect_ratio,
+            generate_audio=False,
+            resolution="1080p"
         )
     )
 
@@ -118,39 +162,49 @@ def generate_video(gtin: str, image_gcs_uri: str) -> str:
         time.sleep(10)
         operation = genai_client.operations.get(operation)
 
+    print("Video generation completed.")
     generated_video_response: GenerateVideosResponse | None = operation.response
-    if generated_video_response is not None:
-        generated_videos: list[GeneratedVideo] | None = generated_video_response.generated_videos
+    generated_videos: list[GeneratedVideo] | None = generated_video_response.generated_videos # type: ignore
+    generated_video: GeneratedVideo = generated_videos[0]  # type: ignore
 
-        if generated_videos is not None:
-            print("Video generation completed successfully.")
-            generated_video = generated_videos[0]
-            
-            print(generated_video.video.uri) # type: ignore
-
-            # Upload the generated video to GCS
-            # Move the original image to the processed bucket
-
-    return f"gs://{OUTPUT_GCS_BUCKET}/{gtin}/generated_videos/001.mp4"
+    return generated_video.video.uri  # type: ignore
 
 
 def main(request):
-    data = request.get_json()
+    data: dict = request.get_json(silent=True)
 
     gtin: str | None = data.get('gtin')
     image_gcs_uri: str | None = data.get('image_gcs_uri')
+    mime_type: str | None = data.get('mime_type')
     aspect_ratio: str | None = data.get('aspect_ratio')
 
     assert gtin is not None, "gtin is required"
     assert image_gcs_uri is not None, "image_gcs_uri is required"
+    assert mime_type is not None, "mime_type is required"
     assert aspect_ratio is not None, "aspect_ratio is required"
 
-    video_gcs_uri: str = generate_video(gtin, image_gcs_uri)
-    log(gtin, image_gcs_uri)
-
-
-if __name__ == '__main__':
-    generate_video(
-        gtin="test-image-001",
-        image_gcs_uri="gs://your-bucket/path/to/image.jpg"
+    video_gcs_uri: str = generate_video(
+        gtin, 
+        image_gcs_uri, 
+        mime_type, 
+        aspect_ratio
     )
+    
+    video_gcs_uri, image_gcs_uri = organize_storage_files(gtin, image_gcs_uri, video_gcs_uri)
+    log(gtin, image_gcs_uri, video_gcs_uri)
+
+
+# For local testing purposes. Run `python main.py`
+if __name__ == '__main__':
+    gtin: str = "2246065552629"
+    image_gcs_uri: str = "gs://galeria-veo3-input-assets-galeria-retail-api-dev/models/2246065552629_09.webp"
+    
+    video_gcs_uri: str = generate_video(
+        gtin=gtin,
+        image_gcs_uri=image_gcs_uri,
+        mime_type="image/webp",
+        aspect_ratio="9:16"
+    )
+    
+    video_gcs_uri, image_gcs_uri = organize_storage_files(gtin, image_gcs_uri, video_gcs_uri)
+    log(gtin, image_gcs_uri, video_gcs_uri)

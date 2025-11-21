@@ -9,7 +9,7 @@
         "name": "status",
         "mode": "REQUIRED",
         "type": "STRING",
-        "description": "The status of the image processing. One of 'QUEUED_FOR_VIDEO_GENERATION', 'GENERATING_VIDEO', 'VIDEO_GENERATION_COMPLETED', 'VIDEO_GENERATION_FAILED', 'VIDEO_APPROVED', 'VIDEO_REJECTED'"
+        "description": "The status of the image processing. One of 'QUEUED_FOR_VIDEO_GENERATION', 'VIDEO_GENERATION_COMPLETED', 'VIDEO_GENERATION_FAILED', 'VIDEO_APPROVED', 'VIDEO_REJECTED'"
     },
     {
         "name": "image_gcs_uri",
