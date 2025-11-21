@@ -44,7 +44,7 @@ data "archive_file" "video_generator_cf_archive" {
 }
 
 resource "google_storage_bucket_object" "video_generator_cf_bucket_object" {
-  name   = "artifacts/${local.video_generator_cf_name}.zip"
+  name   = "${local.video_generator_cf_name}/${data.archive_file.video_generator_cf_archive.output_md5}.zip"
   bucket = data.google_storage_bucket.terraform_state_bucket.name
   source = "${local.video_generator_cf_name}.zip"
 }
