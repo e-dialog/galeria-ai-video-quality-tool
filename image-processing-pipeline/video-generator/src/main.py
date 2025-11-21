@@ -72,7 +72,7 @@ genai_client: GenAIClient = GenAIClient(
     project=PROJECT_ID,
     location='us-central1',
     http_options=HttpOptions(
-        api_version="v1",
+        api_version="v1", # type: ignore
         headers={
             # Important! This ensures we do not overshoot on the provisioned throughput capacity
             # https://docs.cloud.google.com/vertex-ai/generative-ai/docs/provisioned-throughput/use-provisioned-throughput#only-provisioned-throughput

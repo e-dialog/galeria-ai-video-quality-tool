@@ -5,14 +5,14 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Copy the requirements file
-COPY requirements.txt ./requirements.txt
+COPY src/requirements.txt ./requirements.txt
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the app code and other files
 # (A .dockerignore file is recommended to skip .git, etc.)
-COPY . .
+COPY src/ ./
 
 # Use the PORT environment variable provided by Cloud Run
 ENV PORT 8080
