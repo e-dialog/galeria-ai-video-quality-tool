@@ -8,10 +8,13 @@
 import json
 import os
 import base64
+import io
 from datetime import datetime
+from PIL import Image
 
-from google.cloud.bigquery import Client as BigQueryClient
+from google.cloud.bigquery import Table, Client as BigQueryClient
 from google.cloud.tasks_v2 import CloudTasksClient, HttpRequest, Task
+from google.cloud.storage import Client as StorageClient, Blob, Bucket
 
 # Environment variables
 PROJECT_ID: str | None = os.environ.get('PROJECT_ID')
@@ -27,19 +30,34 @@ assert BIGQUERY_VIDEO_LOGS_TABLE_ID is not None, "BIGQUERY_VIDEO_LOGS_TABLE_ID e
 # Google Client libraries
 bigquery_client: BigQueryClient = BigQueryClient()
 cloud_tasks_client: CloudTasksClient = CloudTasksClient()
+storage_client: StorageClient = StorageClient()
+
 
 def unpack_event_message(event) -> dict:
     """Unpacks the Pub/Sub message and returns the email content as a dictionary"""
     data: str = base64.b64decode(event['data']).decode('utf-8')
     return json.loads(data)
 
+
+def calculate_aspect_ratio(image_gcs_uri: str) -> str:
+    """Calculates the aspect ratio of the image stored in GCS."""
+    source_image_blob: Blob = Blob.from_uri(image_gcs_uri, client=storage_client)
+    image_bytes: bytes = source_image_blob.download_as_bytes()
+
+    with Image.open(io.BytesIO(image_bytes)) as image:
+        width, height = image.size
+        print(f"Image dimensions: width={width}, height={height}")
+        return "16:9" if width >= height else "9:16"
+
+
 def log(gtin: str, image_gcs_uri: str) -> None:
     """Logs the video generation event to BigQuery."""
     ingestion_time: str = datetime.now().isoformat()
 
     try:
+        table: Table = bigquery_client.get_table(BIGQUERY_VIDEO_LOGS_TABLE_ID)  # type: ignore
         bigquery_client.insert_rows(
-            table=BIGQUERY_VIDEO_LOGS_TABLE_ID,  # type: ignore
+            table=table,
             rows=[
                 {
                     "gtin": gtin,
@@ -63,17 +81,22 @@ def enqueue_task(gtin: str, gcs_uri: str) -> None:
         queue=TASK_QUEUE_NAME  # type: ignore
     )
 
+    aspect_ratio: str = calculate_aspect_ratio(gcs_uri)
+
     response: Task = cloud_tasks_client.create_task(
         parent=parent,
         task=Task(
             http_request=HttpRequest(
                 http_method="POST",
-                url="https://placeholder-host/", # We override this in the Terraform config with the actual endpoint
+                # We override this in the Terraform config with the actual endpoint
+                url="https://placeholder-host/",
                 headers={"Content-Type": "application/json"},
                 body=json.dumps(
                     {
                         "gtin": gtin,
-                        "image_gcs_uri": gcs_uri
+                        "image_gcs_uri": gcs_uri,
+                        "mime_type": f"image/{gcs_uri.split('.')[-1].lower()}",
+                        "aspect_ratio": aspect_ratio
                     }
                 ).encode()
             )
@@ -86,7 +109,7 @@ def enqueue_task(gtin: str, gcs_uri: str) -> None:
 def main(event: dict, context: dict) -> tuple[str, int]:
     data: dict = unpack_event_message(event)
     print(data)
-    
+
     file_name: str | None = data.get('name')
     bucket_name: str | None = data.get('bucket')
 
@@ -107,3 +130,9 @@ def main(event: dict, context: dict) -> tuple[str, int]:
     log(gtin, gcs_uri)
 
     return "OK", 200
+
+
+if __name__ == "__main__":
+    image_gcs_uri: str = "gs://galeria-veo3-input-assets-galeria-retail-api-dev/models/2246065552629_09.webp"
+    aspect_ratio: str = calculate_aspect_ratio(image_gcs_uri)
+    print(f"Aspect ratio for {image_gcs_uri} is {aspect_ratio}")
