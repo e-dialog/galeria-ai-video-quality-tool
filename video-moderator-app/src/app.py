@@ -213,7 +213,7 @@ else:
                         st.rerun()
                         
                 with c2:                
-                    if st.button("♻️ Regenerate", use_container_width=True):
+                    if st.button("♻️ Regenerate", use_container_width=True, disabled=True, help="Regeneration is currently disabled."):
                         regenerate_video(
                             gtin=gtin,
                             prompt=edited_prompt,
