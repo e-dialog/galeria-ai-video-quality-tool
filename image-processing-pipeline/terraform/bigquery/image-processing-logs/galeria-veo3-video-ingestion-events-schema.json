@@ -12,16 +12,22 @@
         "description": "The status of the image processing. One of 'QUEUED_FOR_VIDEO_GENERATION', 'VIDEO_GENERATION_COMPLETED', 'VIDEO_GENERATION_FAILED', 'VIDEO_APPROVED', 'VIDEO_REJECTED'"
     },
     {
-        "name": "image_gcs_uri",
-        "mode": "NULLABLE",
+        "name": "reference_image_gcs_uris",
+        "mode": "REPEATED",
         "type": "STRING",
-        "description": "The GCS URI of the image asset"
+        "description": "All the GCS URIs of the reference images used for video generation"
     },
     {
         "name": "video_gcs_uri",
         "mode": "NULLABLE",
         "type": "STRING",
         "description": "The GCS URI of the generated video asset"
+    },
+    {
+        "name": "category",
+        "mode": "NULLABLE",
+        "type": "STRING",
+        "description": "The category the image belongs to. Determined by the name of the folder the reference images where originally uploaded to."
     },
     {
         "name": "prompt",
