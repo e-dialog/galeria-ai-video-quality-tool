@@ -45,14 +45,14 @@ resource "google_pubsub_topic" "new_asset_notification_topic" {
 }
 
 # This is the trigger for uploads to the input assets bucket
-resource "google_storage_notification" "notification" {
-  bucket         = google_storage_bucket.galeria_input_assets_bucket.name
-  payload_format = "JSON_API_V1"
-  topic          = google_pubsub_topic.new_asset_notification_topic.id
-  event_types    = ["OBJECT_FINALIZE"]
+# resource "google_storage_notification" "notification" {
+#   bucket         = google_storage_bucket.galeria_input_assets_bucket.name
+#   payload_format = "JSON_API_V1"
+#   topic          = google_pubsub_topic.new_asset_notification_topic.id
+#   event_types    = ["OBJECT_FINALIZE"]
 
-  depends_on = [google_pubsub_topic_iam_binding.gcs_service_agent_publisher_role]
-}
+#   depends_on = [google_pubsub_topic_iam_binding.gcs_service_agent_publisher_role]
+# }
 
 data "archive_file" "task_generator_cf_archive" {
   type        = "zip"
