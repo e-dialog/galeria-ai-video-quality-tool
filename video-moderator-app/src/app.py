@@ -37,8 +37,10 @@ def log(row: dict) -> None:
 def get_gtin_image_blobs(bucket: Bucket, gtin: str) -> list[Blob]:
     """Helper to get all image blobs for a GTIN in a specific bucket."""
     blobs = list(storage_client.list_blobs(bucket, prefix=f"{gtin}/"))
-    # Filter for images (webp, png, jpg, etc.)
-    return [b for b in blobs if b.content_type and b.content_type.startswith("image/")]
+    # Filter for images (webp, png, jpg, etc.) and sort alphabetically to ensure consistent Front/Back ordering
+    images = [b for b in blobs if b.content_type and b.content_type.startswith("image/")]
+    images.sort(key=lambda x: x.name) 
+    return images
 
 def copy_blob_between_buckets(source_blob: Blob, destination_bucket: Bucket, new_name: str) -> None:
     """Copies a blob from one bucket to another with a new name."""
@@ -58,7 +60,7 @@ def approve_video(gtin: str, notes: str | None, moderator: str, video_gcs_uri: s
     """Marks the video as approved in BigQuery and moves ALL associated images and video to approved assets."""
     timestamp: str = datetime.now().isoformat()
 
-    # Move ALL images (Front + Back) found in processed bucket for this GTIN
+    # Move ALL images (Front + Back OR Single) found in processed bucket for this GTIN
     image_blobs = get_gtin_image_blobs(processed_assets_bucket, gtin)
     
     # We log the first image found as the primary reference in BQ, but move all
@@ -73,8 +75,6 @@ def approve_video(gtin: str, notes: str | None, moderator: str, video_gcs_uri: s
     # Move Video
     destination_video_name: str = f"{gtin}/{video_gcs_uri.split('/')[-1]}"
     video_blob = Blob.from_uri(video_gcs_uri, client=storage_client)
-    # Note: Blob.from_uri doesn't inherently know the source bucket object for copy_blob method on bucket
-    # So we used the bucket object to copy
     processed_assets_bucket.copy_blob(video_blob, approved_assets_bucket, destination_video_name)
     video_blob.delete()
 
@@ -190,7 +190,6 @@ else:
     else:
         current_video_data = st.session_state.video_queue[0]
         gtin: str = current_video_data["gtin"]
-        # Note: image_path_gcs from BQ only points to one image, but we want to fetch all from storage
         video_path_gcs: str = current_video_data["video_gcs_uri"]
         initial_prompt: str = current_video_data["prompt"]
         initial_notes: str = current_video_data.get("notes", "")
@@ -206,24 +205,37 @@ else:
             st.error(f"Error getting assets: {e}")
             st.stop()
 
+        # UI LAYOUT: 50/50 Split
         col1, col2 = st.columns([0.5, 0.5])
+        
+        # --- LEFT COLUMN: INPUTS (Images + Prompt) ---
         with col1:
             st.markdown(f"**GTIN:** `{gtin}`")
             
-            # Display all found images (Front/Back) side by side
+            # Compact Image Display Logic
             if image_urls:
-                img_cols = st.columns(len(image_urls))
-                for idx, url in enumerate(image_urls):
-                    with img_cols[idx]:
-                        # Simple logic to guess caption based on filename (usually sorted Front then Back)
-                        caption = "Front" if idx == 0 else "Back"
-                        st.image(url, caption=caption, use_container_width=True)
+                if len(image_urls) == 1:
+                    # LEGACY: Single Image -> Display centered with max width
+                    # width=300 ensures it doesn't take up the whole screen height
+                    st.image(image_urls[0], caption="Source Image", width=300)
+                    
+                else:
+                    # NEW: 2+ Images -> Display side-by-side in sub-columns
+                    img_c1, img_c2 = st.columns(2)
+                    with img_c1:
+                        st.image(image_urls[0], caption="Front", use_container_width=True)
+                    with img_c2:
+                        # Safety check if index 1 exists (implied by len > 1)
+                        if len(image_urls) > 1:
+                            st.image(image_urls[1], caption="Back", use_container_width=True)
             else:
                 st.warning("No reference images found in processed bucket.")
             
-            edited_prompt = st.text_area("Prompt:", value=initial_prompt, height=200)
-            edited_notes = st.text_area("Notes:", value=initial_notes, height=100)
+            # Reduced height for prompt to save screen space (was 200)
+            edited_prompt = st.text_area("Prompt:", value=initial_prompt, height=120)
+            edited_notes = st.text_area("Notes:", value=initial_notes, height=80)
 
+        # --- RIGHT COLUMN: OUTPUT (Video + Actions) ---
         with col2:
 
              with st.container(border=False, horizontal_alignment="center"):
@@ -231,7 +243,6 @@ else:
 
                 c1, c2, c3 = st.columns(3)
                 with c1:
-
                     if st.button("✅ Approve", use_container_width=True):
                         approve_video(
                             gtin=gtin,
@@ -240,7 +251,6 @@ else:
                             video_gcs_uri=video_path_gcs,
                             prompt=edited_prompt
                         )
-                        
                         st.session_state.video_queue.pop(0)
                         st.rerun()
                         
@@ -253,7 +263,6 @@ else:
                             moderator=st.session_state.moderator_id,
                             notes=edited_notes
                         )
-                        
                         st.session_state.video_queue.pop(0)
                         st.rerun()
                     
@@ -265,6 +274,5 @@ else:
                             video_gcs_uri=video_path_gcs,
                             notes=edited_notes
                         )
-                        
                         st.session_state.video_queue.pop(0)
                         st.rerun()
