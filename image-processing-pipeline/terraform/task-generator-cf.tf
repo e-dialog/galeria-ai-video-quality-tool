@@ -22,6 +22,7 @@ resource "google_cloudfunctions2_function" "task_generator" {
 
     max_instance_count = 1000
     max_instance_request_concurrency = 5
+    available_cpu = "2"
     available_memory    = "1024M"
 
     environment_variables = {
@@ -43,16 +44,6 @@ resource "google_cloudfunctions2_function" "task_generator" {
 resource "google_pubsub_topic" "new_asset_notification_topic" {
   name = "new-asset-notifications"
 }
-
-# This is the trigger for uploads to the input assets bucket
-# resource "google_storage_notification" "notification" {
-#   bucket         = google_storage_bucket.galeria_input_assets_bucket.name
-#   payload_format = "JSON_API_V1"
-#   topic          = google_pubsub_topic.new_asset_notification_topic.id
-#   event_types    = ["OBJECT_FINALIZE"]
-
-#   depends_on = [google_pubsub_topic_iam_binding.gcs_service_agent_publisher_role]
-# }
 
 data "archive_file" "task_generator_cf_archive" {
   type        = "zip"
