@@ -34,15 +34,19 @@ def log(row: dict) -> None:
     except Exception as e:
         st.error(f"Error logging to BigQuery: {e}")
 
-def copy_blob_between_buckets(gcs_uri: str, source_bucket: Bucket, destination_bucket: Bucket, new_name: str) -> None:
+def get_gtin_image_blobs(bucket: Bucket, gtin: str) -> list[Blob]:
+    """Helper to get all image blobs for a GTIN in a specific bucket."""
+    blobs = list(storage_client.list_blobs(bucket, prefix=f"{gtin}/"))
+    # Filter for images (webp, png, jpg, etc.)
+    return [b for b in blobs if b.content_type and b.content_type.startswith("image/")]
+
+def copy_blob_between_buckets(source_blob: Blob, destination_bucket: Bucket, new_name: str) -> None:
     """Copies a blob from one bucket to another with a new name."""
-    source_blob: Blob = Blob.from_uri(gcs_uri, client=storage_client)
     source_bucket.copy_blob(
         blob=source_blob,
         destination_bucket=destination_bucket,
         new_name=new_name
     )
-    
     source_blob.delete()
 
 def delete_blob(gcs_uri: str) -> None:
@@ -50,20 +54,34 @@ def delete_blob(gcs_uri: str) -> None:
     blob: Blob = Blob.from_uri(gcs_uri, client=storage_client)
     blob.delete()
     
-def approve_video(gtin: str, notes: str | None, moderator: str, image_gcs_uri: str, video_gcs_uri: str, prompt: str | None) -> None:
-    """Marks the video as approved in BigQuery and moves the image and video to the approved assets bucket."""
+def approve_video(gtin: str, notes: str | None, moderator: str, video_gcs_uri: str, prompt: str | None) -> None:
+    """Marks the video as approved in BigQuery and moves ALL associated images and video to approved assets."""
     timestamp: str = datetime.now().isoformat()
 
-    destination_image_name: str = f"{gtin}/{image_gcs_uri.split('/')[-1]}"
-    copy_blob_between_buckets(image_gcs_uri, processed_assets_bucket, approved_assets_bucket, destination_image_name)
+    # Move ALL images (Front + Back) found in processed bucket for this GTIN
+    image_blobs = get_gtin_image_blobs(processed_assets_bucket, gtin)
     
+    # We log the first image found as the primary reference in BQ, but move all
+    primary_image_uri = ""
+    
+    for blob in image_blobs:
+        destination_name = f"{gtin}/{blob.name.split('/')[-1]}"
+        copy_blob_between_buckets(blob, approved_assets_bucket, destination_name)
+        if not primary_image_uri:
+             primary_image_uri = f"gs://{APPROVED_ASSETS_BUCKET_NAME}/{destination_name}"
+
+    # Move Video
     destination_video_name: str = f"{gtin}/{video_gcs_uri.split('/')[-1]}"
-    copy_blob_between_buckets(video_gcs_uri, processed_assets_bucket, approved_assets_bucket, destination_video_name)
+    video_blob = Blob.from_uri(video_gcs_uri, client=storage_client)
+    # Note: Blob.from_uri doesn't inherently know the source bucket object for copy_blob method on bucket
+    # So we used the bucket object to copy
+    processed_assets_bucket.copy_blob(video_blob, approved_assets_bucket, destination_video_name)
+    video_blob.delete()
 
     log({
         "gtin": gtin,
         "status": "VIDEO_APPROVED",
-        "image_gcs_uri": f"gs://{APPROVED_ASSETS_BUCKET_NAME}/{destination_image_name}",
+        "image_gcs_uri": primary_image_uri,
         "video_gcs_uri": f"gs://{APPROVED_ASSETS_BUCKET_NAME}/{destination_video_name}",
         "prompt": prompt,
         "notes": notes,
@@ -73,12 +91,16 @@ def approve_video(gtin: str, notes: str | None, moderator: str, image_gcs_uri: s
     
     st.toast(f"Video for GTIN {gtin} approved!")
 
-def reject_video(gtin: str, notes: str | None, moderator: str, image_gcs_uri: str, video_gcs_uri: str) -> None:
-    """Marks the video as rejected in BigQuery."""
+def reject_video(gtin: str, notes: str | None, moderator: str, video_gcs_uri: str) -> None:
+    """Marks the video as rejected and moves images back to input."""
     timestamp: str = datetime.now().isoformat()
     
-    destination_image_name: str = f"{gtin}/{image_gcs_uri.split('/')[-1]}"
-    copy_blob_between_buckets(image_gcs_uri, processed_assets_bucket, input_assets_bucket, destination_image_name)
+    # Move ALL images back to input
+    image_blobs = get_gtin_image_blobs(processed_assets_bucket, gtin)
+    
+    for blob in image_blobs:
+        destination_name = f"{gtin}/{blob.name.split('/')[-1]}"
+        copy_blob_between_buckets(blob, input_assets_bucket, destination_name)
 
     delete_blob(video_gcs_uri)
 
@@ -92,19 +114,26 @@ def reject_video(gtin: str, notes: str | None, moderator: str, image_gcs_uri: st
     
     st.toast(f"Video for GTIN {gtin} rejected!")
 
-def regenerate_video(gtin: str, prompt: str | None, moderator: str, notes: str | None, image_gcs_uri: str, video_gcs_uri: str) -> None:
-    """Marks the video for regeneration in BigQuery."""
+def regenerate_video(gtin: str, prompt: str | None, moderator: str, notes: str | None, video_gcs_uri: str) -> None:
+    """Marks the video for regeneration and moves images back to input."""
     timestamp: str = datetime.now().isoformat()
     
-    destination_image_name: str = f"{gtin}/{image_gcs_uri.split('/')[-1]}"
-    copy_blob_between_buckets(image_gcs_uri, processed_assets_bucket, input_assets_bucket, destination_image_name)
+    # Move ALL images back to input
+    image_blobs = get_gtin_image_blobs(processed_assets_bucket, gtin)
+    primary_image_uri = ""
+
+    for blob in image_blobs:
+        destination_name = f"{gtin}/{blob.name.split('/')[-1]}"
+        copy_blob_between_buckets(blob, input_assets_bucket, destination_name)
+        if not primary_image_uri:
+            primary_image_uri = f"gs://{INPUT_ASSETS_BUCKET_NAME}/{destination_name}"
     
     delete_blob(video_gcs_uri)
     
     log({
         "gtin": gtin,
         "status": "VIDEO_REGENERATION_REQUESTED",
-        "image_gcs_uri": f"gs://{INPUT_ASSETS_BUCKET_NAME}/{destination_image_name}",
+        "image_gcs_uri": primary_image_uri,
         "prompt": prompt,
         "notes": notes,
         "moderator_id": moderator,
@@ -161,24 +190,36 @@ else:
     else:
         current_video_data = st.session_state.video_queue[0]
         gtin: str = current_video_data["gtin"]
-        image_path_gcs: str = current_video_data["image_gcs_uri"]
+        # Note: image_path_gcs from BQ only points to one image, but we want to fetch all from storage
         video_path_gcs: str = current_video_data["video_gcs_uri"]
         initial_prompt: str = current_video_data["prompt"]
         initial_notes: str = current_video_data.get("notes", "")
 
         try:
-            image_file_url: str = f"https://storage.cloud.google.com/{image_path_gcs.replace("gs://", "")}"
-            video_file_url: str = f"https://storage.cloud.google.com/{video_path_gcs.replace("gs://", "")}"
+            video_file_url: str = f"https://storage.cloud.google.com/{video_path_gcs.replace('gs://', '')}"
+            
+            # Fetch all associated images (Front + Back) for this GTIN
+            image_blobs = get_gtin_image_blobs(processed_assets_bucket, gtin)
+            image_urls = [f"https://storage.cloud.google.com/{PROCESSED_ASSETS_BUCKET_NAME}/{b.name}" for b in image_blobs]
            
         except Exception as e:
-            st.error(f"Error getting video: {e}")
+            st.error(f"Error getting assets: {e}")
             st.stop()
 
         col1, col2 = st.columns([0.5, 0.5])
         with col1:
             st.markdown(f"**GTIN:** `{gtin}`")
-            with st.container(border=False, horizontal_alignment="center"):
-                st.image(image_file_url, caption="Source Image", width=400)
+            
+            # Display all found images (Front/Back) side by side
+            if image_urls:
+                img_cols = st.columns(len(image_urls))
+                for idx, url in enumerate(image_urls):
+                    with img_cols[idx]:
+                        # Simple logic to guess caption based on filename (usually sorted Front then Back)
+                        caption = "Front" if idx == 0 else "Back"
+                        st.image(url, caption=caption, use_container_width=True)
+            else:
+                st.warning("No reference images found in processed bucket.")
             
             edited_prompt = st.text_area("Prompt:", value=initial_prompt, height=200)
             edited_notes = st.text_area("Notes:", value=initial_notes, height=100)
@@ -196,20 +237,11 @@ else:
                             gtin=gtin,
                             notes=edited_notes,
                             moderator=st.session_state.moderator_id,
-                            image_gcs_uri=image_path_gcs,
                             video_gcs_uri=video_path_gcs,
                             prompt=edited_prompt
                         )
                         
                         st.session_state.video_queue.pop(0)
-                        
-                        current_video_data = st.session_state.video_queue[0]
-                        gtin = current_video_data["gtin"]
-                        image_path_gcs = current_video_data["image_gcs_uri"]
-                        video_path_gcs = current_video_data["video_gcs_uri"]
-                        initial_prompt = current_video_data["prompt"]
-                        initial_notes = current_video_data.get("notes", "")
-                        
                         st.rerun()
                         
                 with c2:                
@@ -217,21 +249,12 @@ else:
                         regenerate_video(
                             gtin=gtin,
                             prompt=edited_prompt,
-                            image_gcs_uri=image_path_gcs,
                             video_gcs_uri=video_path_gcs,
                             moderator=st.session_state.moderator_id,
                             notes=edited_notes
                         )
                         
                         st.session_state.video_queue.pop(0)
-                        
-                        current_video_data = st.session_state.video_queue[0]
-                        gtin = current_video_data["gtin"]
-                        image_path_gcs = current_video_data["image_gcs_uri"]
-                        video_path_gcs = current_video_data["video_gcs_uri"]
-                        initial_prompt = current_video_data["prompt"]
-                        initial_notes = current_video_data.get("notes", "")
-
                         st.rerun()
                     
                 with c3:
@@ -239,18 +262,9 @@ else:
                         reject_video(
                             gtin=gtin,
                             moderator=st.session_state.moderator_id,
-                            image_gcs_uri=image_path_gcs,
                             video_gcs_uri=video_path_gcs,
                             notes=edited_notes
                         )
                         
                         st.session_state.video_queue.pop(0)
-                        
-                        current_video_data = st.session_state.video_queue[0]
-                        gtin = current_video_data["gtin"]
-                        image_path_gcs = current_video_data["image_gcs_uri"]
-                        video_path_gcs = current_video_data["video_gcs_uri"]
-                        initial_prompt = current_video_data["prompt"]
-                        initial_notes = current_video_data.get("notes", "")
-
                         st.rerun()
