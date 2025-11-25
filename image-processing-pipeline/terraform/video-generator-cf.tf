@@ -6,8 +6,8 @@ resource "google_cloudfunctions2_function" "video_generator" {
   description = "Performs rate-limited Veo 3 video generation."
 
   build_config {
-    runtime     = "python312"
-    entry_point = "main"
+    runtime         = "python312"
+    entry_point     = "main"
     service_account = data.google_service_account.terraform_service_agent.id
 
     source {
@@ -25,10 +25,10 @@ resource "google_cloudfunctions2_function" "video_generator" {
     timeout_seconds       = 3600
 
     environment_variables = {
-      PROJECT_NUMBER            = local.project_number
-      PROJECT_ID                = local.project_id
-      INPUT_GCS_BUCKET          = local.galeria_input_assets_bucket_name
-      OUTPUT_GCS_BUCKET         = local.galeria_processed_assets_bucket_name
+      PROJECT_NUMBER               = local.project_number
+      PROJECT_ID                   = local.project_id
+      INPUT_GCS_BUCKET             = local.galeria_input_assets_bucket_name
+      PROCESSED_GCS_BUCKET         = local.galeria_processed_assets_bucket_name
       BIGQUERY_VIDEO_LOGS_TABLE_ID = "${local.project_id}.image_processing_logs.galeria_veo3_video_ingestion_events"
     }
 
