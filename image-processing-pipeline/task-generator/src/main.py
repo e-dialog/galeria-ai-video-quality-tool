@@ -50,7 +50,7 @@ def calculate_aspect_ratio(image_gcs_uri: str) -> str:
         return "16:9" if width >= height else "9:16"
 
 
-def log(gtin: str, image_gcs_uri: str) -> None:
+def log(gtin: str, category: str, front_image_gcs_uri: str) -> None:
     """Logs the video generation event to BigQuery."""
     ingestion_time: str = datetime.now().isoformat()
 
@@ -61,8 +61,9 @@ def log(gtin: str, image_gcs_uri: str) -> None:
             rows=[
                 {
                     "gtin": gtin,
+                    "category": category,
                     "status": "QUEUED_FOR_VIDEO_GENERATION",
-                    "image_gcs_uri": image_gcs_uri,
+                    "image_gcs_uri": front_image_gcs_uri, 
                     "timestamp": ingestion_time,
                 }
             ]
@@ -73,7 +74,7 @@ def log(gtin: str, image_gcs_uri: str) -> None:
         # Log the error, but do not raise to avoid interrupting the main flow
 
 
-def enqueue_task(gtin: str, gcs_uri: str) -> None:
+def enqueue_task(gtin: str, category: str, front_gcs_uri: str, back_gcs_uri: str) -> None:
     """Enqueues a task in Cloud Tasks for processing the image."""
     parent: str = cloud_tasks_client.queue_path(
         project=PROJECT_ID,  # type: ignore
@@ -81,7 +82,8 @@ def enqueue_task(gtin: str, gcs_uri: str) -> None:
         queue=TASK_QUEUE_NAME  # type: ignore
     )
 
-    aspect_ratio: str = calculate_aspect_ratio(gcs_uri)
+    # Use front image for aspect ratio calculation
+    aspect_ratio: str = calculate_aspect_ratio(front_gcs_uri)
 
     response: Task = cloud_tasks_client.create_task(
         parent=parent,
@@ -94,8 +96,10 @@ def enqueue_task(gtin: str, gcs_uri: str) -> None:
                 body=json.dumps(
                     {
                         "gtin": gtin,
-                        "image_gcs_uri": gcs_uri,
-                        "mime_type": f"image/{gcs_uri.split('.')[-1].lower()}",
+                        "category": category,
+                        "front_image_gcs_uri": front_gcs_uri,
+                        "back_image_gcs_uri": back_gcs_uri,
+                        "mime_type": f"image/{front_gcs_uri.split('.')[-1].lower()}",
                         "aspect_ratio": aspect_ratio
                     }
                 ).encode()
@@ -116,23 +120,50 @@ def main(event: dict, context: dict) -> tuple[str, int]:
     assert file_name is not None, "File name is required in the event"
     assert bucket_name is not None, "Bucket name is required in the event"
 
-    gcs_uri: str = f"gs://{bucket_name}/{file_name}"
+    # Expecting format: female_clothes/GTIN_front.webp
+    path_parts = file_name.split('/')
+    
+    # Validation to ensure file is in a folder
+    if len(path_parts) < 2:
+        print(f"File {file_name} is not in a subfolder. Skipping.")
+        return "SKIPPED_NO_FOLDER", 200
 
-    # Extract GTIN from file name, expecting filename format: models/239838409823_01.webp
-    gtin: str = file_name.split('/')[-1].split('_')[0]
+    category: str = path_parts[0] # e.g., 'female_clothes'
+    gtin: str = path_parts[-1].split('_')[0]
+    
+    # List all files for this specific Category + GTIN to check if we have the pair
+    prefix = f"{category}/{gtin}"
+    blobs = list(storage_client.list_blobs(bucket_name, prefix=prefix))
+    
+    # Filter for image files only
+    image_blobs = [b for b in blobs if b.name.endswith(('.webp', '.png', '.jpg', '.jpeg'))]
+    
+    if len(image_blobs) < 2:
+        print(f"Waiting for pair. Found {len(image_blobs)} images for GTIN {gtin} in {category} so far.")
+        return "WAITING_FOR_PAIR", 200
 
-    print(f"Processing new asset: {gcs_uri}")
+    # Sort images to ensure consistent assignment (Front/Back)
+    image_blobs.sort(key=lambda x: x.name)
+    
+    # Assumption: Alphabetical sort puts Front before Back (or _01 before _02)
+    front_image_blob = image_blobs[0]
+    back_image_blob = image_blobs[1]
+    
+    front_gcs_uri: str = f"gs://{bucket_name}/{front_image_blob.name}"
+    back_gcs_uri: str = f"gs://{bucket_name}/{back_image_blob.name}"
 
-    # Enqueue task for video generation
-    enqueue_task(gtin, gcs_uri)
+    print(f"Processing new asset pair for category '{category}': {front_gcs_uri} + {back_gcs_uri}")
 
-    # Log event after it got enqueued
-    log(gtin, gcs_uri)
+    # Enqueue task for video generation with category info
+    enqueue_task(gtin, category, front_gcs_uri, back_gcs_uri)
+
+    # Log event
+    log(gtin, category, front_gcs_uri)
 
     return "OK", 200
 
 
 if __name__ == "__main__":
-    image_gcs_uri: str = "gs://galeria-veo3-input-assets-galeria-retail-api-dev/models/2246065552629_09.webp"
-    aspect_ratio: str = calculate_aspect_ratio(image_gcs_uri)
-    print(f"Aspect ratio for {image_gcs_uri} is {aspect_ratio}")
+    image_gcs_uri: str = "gs://galeria-veo3-input-assets-galeria-retail-api-dev/female_clothes/2246065552629_09.webp"
+    # aspect_ratio: str = calculate_aspect_ratio(image_gcs_uri)
+    # print(f"Aspect ratio for {image_gcs_uri} is {aspect_ratio}")

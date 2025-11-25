@@ -20,35 +20,17 @@ from google.genai.types import (GeneratedVideo, GenerateVideosConfig, HttpOption
 
 # Static constants
 VEO_MODEL: str = "veo-3.1-generate-preview"
-DEFAULT_MODEL_PROMPT: str = """
-    A hyperrealistic, commercial e-commerce video with a minimalist, gallery aesthetic.
-    
-    **Subject:** 
-    The video is focused entirely on a fashion garment, which is displayed by a figure. The primary subject is the garment itself, emphasizing its fabric texture, design, and silhouette. 
-    
-    **Environment:** 
-    The background MUST be a perfectly clean, flat, shadowless, solid white studio environment. There are no other objects, props, or environmental details.
-    
-    **Motion:**
-    The video begins with the camera holding perfectly still for one second on a static, centered, head-on view of the garment.
-    The figure then begins a **glacial, almost imperceptible** turn to the right. The entire movement from the front view to the side profile must take **no less than 5 seconds** to complete, ensuring the motion is extremely slow and controlled.
-    The movement **comes to a complete stop precisely when the garment is viewed from a perfect 20-degree side profile.**
-    
-    **Director's Note on Motion:** The camera MUST remain completely static, locked in place, with no panning, zooming, or shaking. The figure's turn is designed to reveal ONLY the garment's fit and drape from front to side. The final frame must be a true 20-degree profile view, **no more, no less.** Under no circumstances should any part of the garment's rear side be shown.
-    **Lighting:** The lighting on the primary product must remain perfectly even, diffuse, and shadowless, consistent with professional studio lighting. The product should not be affected by the environmental lighting or cast any shadows onto the background.
-    **Material & Texture Focus:** As the figure turns, the studio light must subtly catch and define the texture of the fabric. The goal is to make the material look tangible and high-quality.
-    **Composition & Framing:** The framing must replicate the original input image's perspective perfectly. The garment is perfectly centered with ample, balanced negative space. There is absolutely **no zooming, reframing, or cropping** of the shot. The frame remains completely static, matching the initial perspective; only the figure moves within it.
-    **Overall Mood & Tone:** The aesthetic is minimalist, sophisticated, calm, and premium. The final output should feel clean, airy, and trustworthy.
-    
-    **Strict Constraints:**
-    - The camera must be static. There is absolutely no movement.
-    - The figure's turn must be extremely slow and smooth.
-    - The figure's facial expression must remain neutral and consistent throughout.
-    - **The back of the clothing must never be shown, rendered, or generated.** The view is strictly limited to the front and front-quarter.
-    - The video must be a single, uninterrupted shot.
-    - The white background and lighting must remain constant.
-    - No black bars above or beside the video
-"""
+
+# Prompts mapped to bucket folder names
+PROMPT_MAPPING: dict[str, str] = {
+    "female_clothes": "Generate a fashion studio shot of the attached female clothing. The woman in the video is wearing this clothing and is visible from the front before making a casual 180 degree turn to show the clothing from the back.",
+    "female_underwear": "Generate a fashion studio shot of the attached female underwear. The woman in the video is wearing this underwear and is visible from the front before making a casual 180 degree turn to show the underwear from the back.",
+    "male_clothes": "Generate a fashion studio shot of the attached male clothing. The man in the video is wearing this clothing and is visible from the front before making a casual 180 degree turn to show the clothing from the back.",
+    "male_underwear": "Generate a fashion studio shot of the attached male underwear. The man in the video is wearing this underwear and is visible from the front before making a casual 180 degree turn to show the underwear from the back."
+}
+
+# Fallback if category isn't matched
+DEFAULT_FALLBACK_PROMPT: str = "Generate a fashion studio shot of the attached product. The person in the video is wearing this product and is visible from the front before making a casual 180 degree turn to show the product from the back."
 
 # Environment variables
 PROJECT_NUMBER: str | None = os.getenv("PROJECT_NUMBER")
@@ -106,13 +88,12 @@ def log_error(gtin: str, image_gcs_uri: str, notes: str) -> None:
         "gtin": gtin,
         "status": "VIDEO_GENERATION_FAILED",
         "image_gcs_uri": image_gcs_uri,
-        "prompt": DEFAULT_MODEL_PROMPT,
         "notes": notes,
         "timestamp": ingestion_time,
     })
 
 
-def log_success(gtin: str, image_gcs_uri: str, video_gcs_uri: str) -> None:
+def log_success(gtin: str, image_gcs_uri: str, video_gcs_uri: str, prompt_used: str) -> None:
     """Logs the video generation event to BigQuery."""
     ingestion_time: str = datetime.now().isoformat()
 
@@ -121,30 +102,41 @@ def log_success(gtin: str, image_gcs_uri: str, video_gcs_uri: str) -> None:
         "status": "VIDEO_GENERATION_COMPLETED",
         "image_gcs_uri": image_gcs_uri,
         "video_gcs_uri": video_gcs_uri,
-        "prompt": DEFAULT_MODEL_PROMPT,
+        "prompt": prompt_used,
         "timestamp": ingestion_time,
     })
 
 
-def organize_storage_files(gtin: str, image_gcs_uri: str, video_gcs_uri: str) -> tuple[str, str]:
-    """Organizes the storage files by moving the source image and generated video to their respective folders."""
+def organize_storage_files(gtin: str, front_gcs_uri: str, back_gcs_uri: str, video_gcs_uri: str) -> tuple[str, str]:
+    """Organizes the storage files by moving the source images and generated video to their respective folders."""
     input_asset_bucket: Bucket = storage_client.bucket(INPUT_GCS_BUCKET)
     processed_video_bucket: Bucket = storage_client.bucket(OUTPUT_GCS_BUCKET)
 
-    source_image_blob: Blob = Blob.from_uri(image_gcs_uri, client=storage_client)
-    source_image_name: str = f"{gtin}/{image_gcs_uri.split('/')[-1]}"
+    # Process Front Image
+    front_image_blob: Blob = Blob.from_uri(front_gcs_uri, client=storage_client)
+    # Maintain folder structure or flatten? Flattening to GTIN folder as per previous logic.
+    front_image_name: str = f"{gtin}/{front_gcs_uri.split('/')[-1]}"
     input_asset_bucket.copy_blob(
-        blob=source_image_blob,
+        blob=front_image_blob,
         destination_bucket=processed_video_bucket,
-        new_name=source_image_name
+        new_name=front_image_name
     )
+    front_image_blob.delete()
+    
+    # Process Back Image
+    back_image_blob: Blob = Blob.from_uri(back_gcs_uri, client=storage_client)
+    back_image_name: str = f"{gtin}/{back_gcs_uri.split('/')[-1]}"
+    input_asset_bucket.copy_blob(
+        blob=back_image_blob,
+        destination_bucket=processed_video_bucket,
+        new_name=back_image_name
+    )
+    back_image_blob.delete()
 
-    source_image_blob.delete()
-
-    print(f"Source moved to processed bucket at: gs://{OUTPUT_GCS_BUCKET}/{source_image_name}")
+    print(f"Sources moved to processed bucket for GTIN {gtin}")
 
     generated_video_blob: Blob = Blob.from_uri(video_gcs_uri, client=storage_client)
-    generated_video_name: str = f"{gtin}/{source_image_name.split('/')[-1].split('.')[0]}_{datetime.now().isoformat()}.mp4"
+    generated_video_name: str = f"{gtin}/{front_image_name.split('/')[-1].split('.')[0]}_{datetime.now().isoformat()}.mp4"
     processed_video_bucket.copy_blob(
         blob=generated_video_blob,
         destination_bucket=processed_video_bucket,
@@ -155,19 +147,27 @@ def organize_storage_files(gtin: str, image_gcs_uri: str, video_gcs_uri: str) ->
 
     print(f"Video moved after generating and stored at: gs://{OUTPUT_GCS_BUCKET}/{generated_video_name}")
 
-    return f"gs://{OUTPUT_GCS_BUCKET}/{generated_video_name}", f"gs://{OUTPUT_GCS_BUCKET}/{source_image_name}"
+    return f"gs://{OUTPUT_GCS_BUCKET}/{generated_video_name}", f"gs://{OUTPUT_GCS_BUCKET}/{front_image_name}"
 
 
-def generate_video(gtin: str, image_gcs_uri: str, mime_type: str, aspect_ratio: str) -> str:
-    """Generates a video from the given image"""
+def generate_video(gtin: str, category: str, front_image_gcs_uri: str, back_image_gcs_uri: str, mime_type: str, aspect_ratio: str) -> tuple[str, str]:
+    """Generates a video from the given image pair using Subject References"""
+
+    # specific prompt based on category
+    prompt_text = PROMPT_MAPPING.get(category, DEFAULT_FALLBACK_PROMPT)
+    print(f"Generating video for category '{category}' using prompt: {prompt_text}")
 
     operation: GenerateVideosOperation = genai_client.models.generate_videos(
         model=VEO_MODEL,
 
-        source=GenerateVideosSource(
-            prompt=DEFAULT_MODEL_PROMPT,
-            image=Image(gcs_uri=image_gcs_uri, mime_type=mime_type)
-        ),
+        # Prompt + Product References (Subject References)
+        # Note: 'image' is set to None because we are NOT doing Image-to-Video (first frame).
+        # We are doing Text-to-Video with Reference Images.
+        prompt=prompt_text,
+        subject_references=[
+            Image(gcs_uri=front_image_gcs_uri, mime_type=mime_type),
+            Image(gcs_uri=back_image_gcs_uri, mime_type=mime_type)
+        ],
 
         config=GenerateVideosConfig(
             number_of_videos=1,
@@ -193,37 +193,44 @@ def generate_video(gtin: str, image_gcs_uri: str, mime_type: str, aspect_ratio: 
     generated_videos: list[GeneratedVideo] | None = generated_video_response.generated_videos # type: ignore
     generated_video: GeneratedVideo = generated_videos[0]  # type: ignore
 
-    return generated_video.video.uri  # type: ignore
+    return generated_video.video.uri, prompt_text  # type: ignore
 
 
 def main(request) -> tuple[str, int]:
     data: dict = request.get_json(silent=True)
 
     gtin: str | None = data.get('gtin')
-    image_gcs_uri: str | None = data.get('image_gcs_uri')
+    category: str | None = data.get('category')
+    front_image_gcs_uri: str | None = data.get('front_image_gcs_uri')
+    back_image_gcs_uri: str | None = data.get('back_image_gcs_uri')
+    
     mime_type: str | None = data.get('mime_type')
     aspect_ratio: str | None = data.get('aspect_ratio')
 
     assert gtin is not None, "gtin is required"
-    assert image_gcs_uri is not None, "image_gcs_uri is required"
+    assert category is not None, "category is required"
+    assert front_image_gcs_uri is not None, "front_image_gcs_uri is required"
+    assert back_image_gcs_uri is not None, "back_image_gcs_uri is required"
     assert mime_type is not None, "mime_type is required"
     assert aspect_ratio is not None, "aspect_ratio is required"
 
     try:
-        video_gcs_uri: str = generate_video(
+        video_gcs_uri, used_prompt = generate_video(
             gtin,
-            image_gcs_uri,
+            category,
+            front_image_gcs_uri,
+            back_image_gcs_uri,
             mime_type,
             aspect_ratio
         )
 
     except Exception as exception:
         print(f"Error during video generation: {exception}")
-        log_error(gtin, image_gcs_uri, "VIDEO_GENERATION_FAILED")
+        log_error(gtin, front_image_gcs_uri, str(exception))
         return str(exception), 500
 
-    video_gcs_uri, image_gcs_uri = organize_storage_files(gtin, image_gcs_uri, video_gcs_uri)
-    log_success(gtin, image_gcs_uri, video_gcs_uri)
+    video_gcs_uri, final_image_uri = organize_storage_files(gtin, front_image_gcs_uri, back_image_gcs_uri, video_gcs_uri)
+    log_success(gtin, final_image_uri, video_gcs_uri, used_prompt)
 
     return "OK", 200
 
@@ -231,14 +238,18 @@ def main(request) -> tuple[str, int]:
 # For local testing purposes. Run `python main.py`
 if __name__ == '__main__':
     gtin: str = "2246065552629"
-    image_gcs_uri: str = "gs://galeria-veo3-input-assets-galeria-retail-api-dev/models/2246065552629_09.webp"
+    category: str = "female_clothes"
+    front_image: str = "gs://galeria-veo3-input-assets-galeria-retail-api-dev/female_clothes/2246065552629_09.webp"
+    back_image: str = "gs://galeria-veo3-input-assets-galeria-retail-api-dev/female_clothes/2246065552629_10.webp"
 
-    video_gcs_uri: str = generate_video(
+    video_gcs_uri, prompt = generate_video(
         gtin=gtin,
-        image_gcs_uri=image_gcs_uri,
+        category=category,
+        front_image_gcs_uri=front_image,
+        back_image_gcs_uri=back_image,
         mime_type="image/webp",
         aspect_ratio="9:16"
     )
 
-    video_gcs_uri, image_gcs_uri = organize_storage_files(gtin, image_gcs_uri, video_gcs_uri)
-    log_success(gtin, image_gcs_uri, video_gcs_uri)
+    video_gcs_uri, img_uri = organize_storage_files(gtin, front_image, back_image, video_gcs_uri)
+    log_success(gtin, img_uri, video_gcs_uri, prompt)
