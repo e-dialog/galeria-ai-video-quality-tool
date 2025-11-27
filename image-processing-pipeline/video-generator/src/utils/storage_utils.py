@@ -46,4 +46,5 @@ def move_assets_to_processed(gtin: str, reference_image_gcs_uris: list[str], vid
     print(f"Video moved after generating and stored at: gs://{PROCESSED_GCS_BUCKET}/{generated_video_name}")
 
     video_gcs_uri = f"gs://{PROCESSED_GCS_BUCKET}/{generated_video_name}"
-    log_success(gtin, reference_image_gcs_uris, video_gcs_uri, prompt)
+    reference_image_destination_names: list[str] = [f"gs://{PROCESSED_GCS_BUCKET}/{gtin}/{uri.split('/')[-1]}" for uri in reference_image_gcs_uris]
+    log_success(gtin, reference_image_destination_names, video_gcs_uri, prompt)

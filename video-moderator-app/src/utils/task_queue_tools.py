@@ -16,6 +16,8 @@ def publish_task() -> None:
     for asset in get_new_input_assets():
         print(f"Publishing asset task: {asset['gtin']}")
         publisher.publish(TASK_QUEUE_TOPIC_ID, json.dumps(asset).encode("utf-8"))
+        
+    print("All new asset tasks published.")
 
 
 def get_new_input_assets() -> Generator[dict, None, None]:
