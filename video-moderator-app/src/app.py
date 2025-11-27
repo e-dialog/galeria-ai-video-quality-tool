@@ -84,7 +84,7 @@ else:
         with col2:
 
              with st.container(border=False, horizontal_alignment="center"):
-                st.video(video_file_url, width=400, autoplay=True)
+                st.video(video_file_url, width="stretch", autoplay=True)
 
                 c1, c2, c3 = st.columns(3)
                 with c1:
@@ -102,7 +102,7 @@ else:
                         st.rerun()
                         
                 with c2:                
-                    if st.button("♻️ Regenerate", use_container_width=True, disabled=True, help="Regeneration is currently disabled."):
+                    if st.button("♻️ Regenerate", width="stretch", disabled=True, help="Regeneration is currently disabled."):
                         regenerate_video(
                             gtin=gtin,
                             prompt=edited_prompt,
@@ -114,7 +114,7 @@ else:
                         st.rerun()
                     
                 with c3:
-                    if st.button("🗑️ Remove", use_container_width=True):
+                    if st.button("🗑️ Remove", width="stretch"):
                         reject_video(
                             gtin=gtin,
                             moderator=st.session_state.moderator_id,

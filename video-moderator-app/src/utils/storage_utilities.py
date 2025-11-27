@@ -36,6 +36,17 @@ def initiate_blob_copy(gtin: str, source_uris: list[str], source_bucket: Bucket,
         blob: Blob = Blob.from_uri(gcs_uri, client=storage_client)
         copy_blob_between_buckets(blob, source_bucket, destination_bucket, destination_file_name)
 
+def fix_reference_image_uris(gtin: str, reference_image_gcs_uris: list[str]) -> list[str]:
+    """Fixes reference image URIs to point to processed assets if they still point to input assets."""
+    for index, gcs_uri in enumerate(reference_image_gcs_uris):
+        if "input-assets" in gcs_uri.split("/")[0]:
+            # Change gs://galeria-veo3-input-assets-galeria-retail-api-dev/male_clothes/4062742342943_01.jpg
+            # to gs://galeria-veo3-processed-assets-galeria-retail-api-dev/4062742342943/4062742342943_01.jpg
+            new_uri = f"gs://{PROCESSED_ASSETS_BUCKET_NAME}/{gtin}/{gcs_uri.split('/')[-1]}"
+            reference_image_gcs_uris[index] = new_uri
+            
+    return reference_image_gcs_uris
+
 def approve_video(
     gtin: str, 
     notes: str | None, 
@@ -47,6 +58,9 @@ def approve_video(
 ) -> None:
     """Marks the video as approved in BigQuery and moves ALL associated images and video to approved assets."""
     timestamp: str = datetime.now().isoformat()
+
+    # Fix for logs containing the wrong URI
+    reference_image_gcs_uris = fix_reference_image_uris(gtin, reference_image_gcs_uris)
 
     # Move Reference Images
     source_uris: list[str] = reference_image_gcs_uris + [video_gcs_uri]
@@ -80,6 +94,9 @@ def reject_video(
 ) -> None:
     """Marks the video as rejected and moves images back to input."""
     timestamp: str = datetime.now().isoformat()
+
+    # Fix for logs containing the wrong URI
+    reference_image_gcs_uris = fix_reference_image_uris(gtin, reference_image_gcs_uris)
 
     for gcs_uri in reference_image_gcs_uris:
         blob: Blob = Blob.from_uri(gcs_uri, client=storage_client)
