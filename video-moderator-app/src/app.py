@@ -51,7 +51,7 @@ else:
         initial_prompt: str = current_video_data["prompt"]
         initial_notes: str = current_video_data.get("notes", "")
         category: str = current_video_data["category"]
-
+        
         try:
             video_file_url: str = f"https://storage.cloud.google.com/{video_path_gcs.replace('gs://', '')}"
            
@@ -64,7 +64,7 @@ else:
         
         # --- LEFT COLUMN: INPUTS (Images + Prompt) ---
         with col1:
-            st.markdown(f"**GTIN:** `{gtin}`")
+            st.markdown(f"**GTIN:** `{gtin}`. **Category:** `{category}`")
             
             number_of_columns: int = len(reference_image_gcs_uris)
             reference_image_columns: list = st.columns(number_of_columns)

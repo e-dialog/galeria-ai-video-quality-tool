@@ -10,13 +10,14 @@ resource "google_cloud_run_service_iam_member" "cloudtasks_video_generator_invok
   member   = "serviceAccount:service-${local.project_number}@gcp-sa-cloudtasks.iam.gserviceaccount.com"
 }
 
-resource "google_pubsub_topic_iam_binding" "gcs_service_agent_publisher_roles" {
-  for_each = toset([
-    google_pubsub_topic.new_asset_notification_topic.id,
-    google_pubsub_topic.video_approved_notifications.id,
-  ])
+resource "google_pubsub_topic_iam_binding" "gcs_service_agent_new_asset_notification_topic_publisher_role" {
+  topic   = google_pubsub_topic.new_asset_notification_topic.id
+  role    = "roles/pubsub.publisher"
+  members = ["serviceAccount:${data.google_storage_project_service_account.gcs_account.email_address}"]
+}
 
-  topic   = each.key
+resource "google_pubsub_topic_iam_binding" "gcs_service_agent_video_approved_notifications_topic_publisher_role" {
+  topic   = google_pubsub_topic.video_approved_notifications.id
   role    = "roles/pubsub.publisher"
   members = ["serviceAccount:${data.google_storage_project_service_account.gcs_account.email_address}"]
 }
