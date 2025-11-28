@@ -84,7 +84,7 @@ def approve_video(
     st.toast(f"Video for GTIN {gtin} approved!")
 
 
-def reject_video(
+def remove_video(
     gtin: str, 
     notes: str | None, 
     moderator: str, 
@@ -92,38 +92,61 @@ def reject_video(
     category: str,
     reference_image_gcs_uris: list[str]
 ) -> None:
-    """Marks the video as rejected and moves images back to input."""
+    """Marks the video as removed and deletes ALL associated images and video."""
     timestamp: str = datetime.now().isoformat()
 
     # Fix for logs containing the wrong URI
     reference_image_gcs_uris = fix_reference_image_uris(gtin, reference_image_gcs_uris)
 
     for gcs_uri in reference_image_gcs_uris:
-        blob: Blob = Blob.from_uri(gcs_uri, client=storage_client)
-        destination_name: str = f"{category}/{gcs_uri.split('/')[-1]}"
-        copy_blob_between_buckets(blob, processed_assets_bucket, input_assets_bucket, destination_name)
+        delete_blob(gcs_uri)    
 
     delete_blob(video_gcs_uri)
 
     log({
         "gtin": gtin,
-        "status": "VIDEO_REJECTED",
+        "status": "ALL_ASSETS_REMOVED",
         "notes": notes,
         "category": category,
-        "reference_image_gcs_uris": reference_image_gcs_uris,
         "moderator_id": moderator,
         "timestamp": timestamp,
     })
 
-    st.toast(f"Video for GTIN {gtin} rejected!")
+    st.toast(f"Video and images for GTIN {gtin} removed!")
 
 
 def regenerate_video(
     gtin: str, 
-    prompt: str | None, 
     moderator: str, 
     notes: str | None, 
-    video_gcs_uri: str
+    category: str,
+    video_gcs_uri: str,
+    reference_image_gcs_uris: list[str]
 ) -> None:
     """Marks the video for regeneration and moves images back to input."""
-    pass
+    timestamp: str = datetime.now().isoformat()
+    
+     # Fix for logs containing the wrong URI
+    reference_image_gcs_uris = fix_reference_image_uris(gtin, reference_image_gcs_uris)
+    
+    # We only move reference images back to input, video is deleted
+    delete_blob(video_gcs_uri)
+    
+    for gcs_uri in reference_image_gcs_uris:
+        destination_file_name: str = f"{category}/{gcs_uri.split('/')[-1]}"
+        blob: Blob = Blob.from_uri(gcs_uri, client=storage_client)
+        copy_blob_between_buckets(blob, processed_assets_bucket, input_assets_bucket, destination_file_name)
+    
+    reference_image_destination_names: list[str] = [f"gs://{INPUT_ASSETS_BUCKET_NAME}/{category}/{uri.split('/')[-1]}" for uri in reference_image_gcs_uris]
+    
+    log({
+        "gtin": gtin,
+        "status": "VIDEO_MARKED_FOR_REGENERATION",
+        "reference_image_gcs_uris": reference_image_destination_names,
+        "category": category,
+        "notes": notes,
+        "moderator_id": moderator,
+        "timestamp": timestamp,
+    })
+
+    st.toast(f"Video for GTIN {gtin} marked for regeneration! Assets moved back to input bucket.")

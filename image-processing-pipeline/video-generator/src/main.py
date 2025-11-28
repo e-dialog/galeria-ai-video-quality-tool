@@ -34,8 +34,8 @@ def main(request) -> tuple[str, int]:
         log_error(gtin, assets, str(exception))
         return str(exception), 500
 
-    move_assets_to_processed(gtin, assets, video_gcs_uri, used_prompt)
-
+    move_assets_to_processed(gtin, assets, video_gcs_uri, used_prompt, category)
+    
     return "OK", 200
 
 
@@ -54,4 +54,4 @@ if __name__ == '__main__':
         gcs_uris=assets
     )
 
-    move_assets_to_processed(gtin, assets, video_gcs_uri, prompt)
+    move_assets_to_processed(gtin, assets, video_gcs_uri, prompt, category)

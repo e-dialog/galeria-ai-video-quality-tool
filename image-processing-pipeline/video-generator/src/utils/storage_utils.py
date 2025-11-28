@@ -31,7 +31,7 @@ def copy_blob_between_buckets(source_uri: str, source_bucket: Bucket, destinatio
     source_blob.delete()
 
 
-def move_assets_to_processed(gtin: str, reference_image_gcs_uris: list[str], video_gcs_uri: str, prompt: str) -> None:
+def move_assets_to_processed(gtin: str, reference_image_gcs_uris: list[str], video_gcs_uri: str, prompt: str, category: str) -> None:
     """Organizes the storage files by moving the source images and generated video to their respective folders."""
     for gcs_uri in reference_image_gcs_uris:
         source_file_name: str = f"{gtin}/{gcs_uri.split('/')[-1]}"
@@ -47,4 +47,10 @@ def move_assets_to_processed(gtin: str, reference_image_gcs_uris: list[str], vid
 
     video_gcs_uri = f"gs://{PROCESSED_GCS_BUCKET}/{generated_video_name}"
     reference_image_destination_names: list[str] = [f"gs://{PROCESSED_GCS_BUCKET}/{gtin}/{uri.split('/')[-1]}" for uri in reference_image_gcs_uris]
-    log_success(gtin, reference_image_destination_names, video_gcs_uri, prompt)
+    log_success(
+        gtin=gtin, 
+        reference_image_gcs_uris=reference_image_destination_names, 
+        video_gcs_uri=video_gcs_uri, 
+        prompt_used=prompt,
+        category=category
+    )

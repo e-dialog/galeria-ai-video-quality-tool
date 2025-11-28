@@ -1,7 +1,7 @@
 import streamlit as st
 from cached_resources import get_videos_to_review
 from utils.storage_utilities import (approve_video, regenerate_video,
-                                     reject_video)
+                                     remove_video)
 from utils.task_queue_tools import publish_task
 
 # --- UI ---
@@ -102,20 +102,21 @@ else:
                         st.rerun()
                         
                 with c2:                
-                    if st.button("♻️ Regenerate", width="stretch", disabled=True, help="Regeneration is currently disabled."):
+                    if st.button("♻️ Regenerate", width="stretch"):
                         regenerate_video(
                             gtin=gtin,
-                            prompt=edited_prompt,
+                            category=category,
                             video_gcs_uri=video_path_gcs,
                             moderator=st.session_state.moderator_id,
-                            notes=edited_notes
+                            notes=edited_notes,
+                            reference_image_gcs_uris=reference_image_gcs_uris,
                         )
                         st.session_state.video_queue.pop(0)
                         st.rerun()
                     
                 with c3:
                     if st.button("🗑️ Remove", width="stretch"):
-                        reject_video(
+                        remove_video(
                             gtin=gtin,
                             moderator=st.session_state.moderator_id,
                             video_gcs_uri=video_path_gcs,

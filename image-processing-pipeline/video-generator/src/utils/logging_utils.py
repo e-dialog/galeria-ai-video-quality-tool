@@ -40,7 +40,8 @@ def log_success(
     gtin: str,
     reference_image_gcs_uris: list[str],
     video_gcs_uri: str,
-    prompt_used: str
+    prompt_used: str,
+    category: str
 ) -> None:
     """Logs the video generation event to BigQuery."""
     ingestion_time: str = datetime.now().isoformat()
@@ -49,6 +50,7 @@ def log_success(
         "gtin": gtin,
         "status": "VIDEO_GENERATION_COMPLETED",
         "reference_image_gcs_uris": reference_image_gcs_uris,
+        "category": category,
         "video_gcs_uri": video_gcs_uri,
         "prompt": prompt_used,
         "timestamp": ingestion_time,
