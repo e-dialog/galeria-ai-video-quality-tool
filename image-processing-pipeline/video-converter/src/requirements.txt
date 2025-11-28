@@ -1,0 +1,2 @@
+moviepy==2.2.1
+google-cloud-storage==3.6.0

@@ -42,6 +42,7 @@ locals {
   # Function names
   task_generator_cf_name  = "task-generator"
   video_generator_cf_name = "video-generator"
+  video_converter_cf_name = "video-converter"
 
   # Service Accounts
   project_number                     = data.google_project.project.number
