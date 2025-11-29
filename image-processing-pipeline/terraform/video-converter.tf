@@ -20,7 +20,7 @@ resource "google_cloudfunctions2_function" "video_converter" {
     service_account_email = local.image_processing_pipeline_sa_email
     ingress_settings      = "ALLOW_INTERNAL_ONLY"
     available_memory      = "256Mi"
-    timeout_seconds       = 3600
+    timeout_seconds       = 120
 
     environment_variables = {
       APPROVED_GCS_BUCKET = local.galeria_processed_assets_bucket_name
