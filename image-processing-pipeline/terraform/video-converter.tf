@@ -23,7 +23,7 @@ resource "google_cloudfunctions2_function" "video_converter" {
     timeout_seconds       = 120
 
     environment_variables = {
-      APPROVED_GCS_BUCKET = local.galeria_processed_assets_bucket_name
+      APPROVED_GCS_BUCKET = local.galeria_approved_assets_bucket_name
     }
 
     # With video generation taking 30s-60s and us limiting to one query per 32 seconds, we can technically have 2 instances running at any given time
