@@ -25,9 +25,9 @@ def unpack_event_message(event) -> dict:
     data: str = base64.b64decode(event['data']).decode('utf-8')
     return json.loads(data)
 
-def convert_mp4_to_webp_gcs(source_blob_name, target_blob_name):
+def convert_mp4_to_webp_gcs(source_blob_name: str, target_blob_name: str) -> None:
     source_blob: Blob = approved_bucket.blob(source_blob_name)
-    target_blob: Blob = approved_bucket.blob(target_blob_name)
+    
 
     with tempfile.NamedTemporaryFile(suffix=".mp4") as temp_input, \
         tempfile.NamedTemporaryFile(suffix=".webp") as temp_output:
@@ -54,6 +54,7 @@ def convert_mp4_to_webp_gcs(source_blob_name, target_blob_name):
                     if new_w % 2 != 0: new_w -= 1
                     
                     print(f"8s Constraint: Downscaling to width={new_w}px")
+                    target_blob_name = target_blob_name.replace('.webp', f'_{TARGET_FPS}fps_w{new_w}.webp')
                     clip = clip.resized(width=new_w)
                 
                     # 2. Convert
@@ -74,6 +75,8 @@ def convert_mp4_to_webp_gcs(source_blob_name, target_blob_name):
 
             print(f"Uploading to {target_blob_name}...")
             # Upload directly from disk
+            
+            target_blob: Blob = approved_bucket.blob(target_blob_name)
             target_blob.upload_from_filename(temp_output.name, content_type='image/webp')
 
         except Exception as e:
@@ -101,7 +104,7 @@ def main(event, context):
     
 if __name__ == "__main__":
     # For local testing purposes
-    source_blob_name: str = "8713537477727/sample_0_2025-11-28T06:30:59.508355.mp4"
+    source_blob_name: str = "4062742300097/sample_0_2025-11-28T06:30:39.849686.mp4"
     
     gtin: str = source_blob_name.split('/')[0]
     print(f"Processing file: {source_blob_name}")
