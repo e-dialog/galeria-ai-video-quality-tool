@@ -11,7 +11,7 @@ resource "google_cloudfunctions2_function" "video_converter" {
     source {
       storage_source {
         bucket = data.google_storage_bucket.terraform_state_bucket.name
-        object = google_storage_bucket_object.video_generator_cf_bucket_object.name
+        object = google_storage_bucket_object.video_converter_cf_bucket_object.name
       }
     }
   }
