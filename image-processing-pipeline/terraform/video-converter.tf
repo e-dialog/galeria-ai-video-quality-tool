@@ -19,7 +19,8 @@ resource "google_cloudfunctions2_function" "video_converter" {
   service_config {
     service_account_email = local.image_processing_pipeline_sa_email
     ingress_settings      = "ALLOW_INTERNAL_ONLY"
-    available_memory      = "256Mi"
+    available_memory      = "1024M"
+    available_cpu         = "2"
     timeout_seconds       = 120
 
     environment_variables = {
