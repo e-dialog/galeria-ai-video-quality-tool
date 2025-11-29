@@ -101,7 +101,10 @@ def main(event, context):
     
 if __name__ == "__main__":
     # For local testing purposes
-    test_event = {
-        'name': '4062742351594/sample_0_2025-11-27T08:48:09.631387.mp4'
-    }
-    main(test_event, None)
+    source_blob_name: str = "8713537477727/sample_0_2025-11-28T06:30:59.508355.mp4"
+    
+    gtin: str = source_blob_name.split('/')[0]
+    print(f"Processing file: {source_blob_name}")
+
+    target_blob_name: str = f"!production/{gtin}.webp"
+    convert_mp4_to_webp_gcs(source_blob_name, target_blob_name)
