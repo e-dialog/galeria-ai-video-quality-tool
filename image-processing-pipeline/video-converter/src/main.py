@@ -77,7 +77,6 @@ def convert_mp4_to_webp_gcs(source_blob_name: str, target_blob_name: str) -> Non
                     )
 
             print(f"Uploading to {target_blob_name}...")
-            # Upload directly from disk
             
             target_blob: Blob = approved_bucket.blob(target_blob_name)
             target_blob.upload_from_filename(temp_output.name, content_type='image/webp')
@@ -92,8 +91,17 @@ def main(event, context):
     data: dict = unpack_event_message(event)
     
     source_blob_name: str = data['name']
-    if source_blob_name.endswith('.webp'):
-        # Skip already processed files
+    
+    if source_blob_name.startswith('!production/'): # Skip output files
+            print(f"Skipping output file: {source_blob_name}")
+            return "OK", 200
+        
+    if not source_blob_name.lower().endswith('.mp4'): # Process only mp4 files
+        print(f"Skipping non-mp4 file: {source_blob_name}")
+        return "OK", 200
+
+    if source_blob_name.endswith('/'): # Skip folders
+        print(f"Skipping folder: {source_blob_name}")
         return "OK", 200
 
     print(f"Converting video to webp... {source_blob_name}")
