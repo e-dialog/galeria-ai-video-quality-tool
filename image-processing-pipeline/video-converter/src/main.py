@@ -92,7 +92,7 @@ def main(event, context):
     data: dict = unpack_event_message(event)
     
     source_blob_name: str = data['name']
-    if source_blob_name.startswith('!production/'):
+    if source_blob_name.endswith('.webp'):
         # Skip already processed files
         return "OK", 200
 
@@ -109,7 +109,7 @@ def main(event, context):
     
 if __name__ == "__main__":
     # For local testing purposes
-    source_blob_name: str = "4062742300097/sample_0_2025-11-28T06:30:39.849686.mp4"
+    source_blob_name: str = "4031309466248/sample_0_2025-11-28T06:28:39.795400.mp4"
     
     gtin: str = source_blob_name.split('/')[0]
     print(f"Processing file: {source_blob_name}")
