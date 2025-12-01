@@ -36,6 +36,9 @@ def convert_mp4_to_webp_gcs(source_blob_name: str, target_blob_name: str) -> Non
         # Download strictly to disk (low memory usage)
         source_blob.download_to_filename(temp_input.name)
 
+        # Flush the buffer to ensure the file exists on disk for FFMPEG
+        temp_input.flush()
+
         print("Converting...")
         try:
             with VideoFileClip(temp_input.name) as clip:
@@ -92,6 +95,8 @@ def main(event, context):
     if source_blob_name.startswith('!production/'):
         # Skip already processed files
         return "OK", 200
+
+    print(f"Converting video to webp... {source_blob_name}")
     
     gtin: str = source_blob_name.split('/')[0]
     print(f"Processing file: {source_blob_name}")
