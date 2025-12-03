@@ -16,7 +16,7 @@ steps:
       - '-c'
       - |
         echo -e "bucket = \"terraform-${PROJECT_ID}\"" > /workspace/config.gcs.tfbackend
-        echo -e "prefix = \"video-generation-pipeline\"" > /workspace/config.gcs.tfbackend
+        echo -e "prefix = \"video-generation-pipeline\"" >> /workspace/config.gcs.tfbackend
         echo "generated backend configuration:"
         cat /workspace/config.gcs.tfbackend
 
