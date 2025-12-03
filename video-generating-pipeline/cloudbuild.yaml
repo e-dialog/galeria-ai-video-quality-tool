@@ -24,14 +24,14 @@ steps:
   - id: initialize-terraform
     name: hashicorp/terraform:1.14.0
     entrypoint: terraform
-    dir: image-processing-pipeline/terraform
+    dir: video-generating-pipeline/terraform
     args: [ 'init', '-backend-config=/workspace/config.gcs.tfbackend' ]
     waitFor: [ 'create-terraform-state-bucket', 'generate-terraform-backend' ]
 
   - id: apply-terraform
     name: hashicorp/terraform:1.14.0
     entrypoint: terraform
-    dir: image-processing-pipeline/terraform
+    dir: video-generating-pipeline/terraform
     args: [
       'apply',
       '-auto-approve',

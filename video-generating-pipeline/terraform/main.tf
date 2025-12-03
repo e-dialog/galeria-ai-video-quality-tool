@@ -26,3 +26,4 @@ locals {
   firestore_database_name = "video-generation-tracking-db"
   video_generation_asset_bucket_name = "video-generation-assets-bucket-${var.project_id}"
 }
+
