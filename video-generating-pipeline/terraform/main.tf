@@ -24,4 +24,5 @@ data "google_service_account" "terraform_service_agent" {
 
 locals {
   firestore_database_name = "video-generation-tracking-db"
+  video_generation_asset_bucket_name = "video-generation-assets-bucket-${var.project_id}"
 }
