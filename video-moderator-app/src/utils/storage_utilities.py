@@ -150,3 +150,8 @@ def regenerate_video(
     })
 
     st.toast(f"Video for GTIN {gtin} marked for regeneration! Assets moved back to input bucket.")
+
+def file_exists(gcs_uri: str) -> bool:
+    """Checks if a file exists in GCS given its URI."""
+    blob: Blob = Blob.from_uri(gcs_uri, client=storage_client)
+    return blob.exists()

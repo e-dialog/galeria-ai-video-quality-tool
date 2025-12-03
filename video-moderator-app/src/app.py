@@ -1,7 +1,7 @@
 import streamlit as st
 from cached_resources import get_videos_to_review
 from utils.storage_utilities import (approve_video, regenerate_video,
-                                     remove_video)
+                                     remove_video, file_exists)
 from utils.task_queue_tools import publish_task
 
 # --- UI ---
@@ -54,6 +54,9 @@ else:
         
         try:
             video_file_url: str = f"https://storage.cloud.google.com/{video_path_gcs.replace('gs://', '')}"
+            if not file_exists(video_path_gcs):
+                st.session_state.video_queue.pop(0)
+                st.rerun()
            
         except Exception as e:
             st.error(f"Error getting assets: {e}")
