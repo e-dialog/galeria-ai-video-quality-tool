@@ -1,58 +1,58 @@
-resource "google_cloudfunctions2_function" "task_generator" {
-  name        = local.task_generator_cf_name
-  location    = local.region
-  description = "GCS listener, BigQuery logger, and Cloud Tasks enqueuer."
+# resource "google_cloudfunctions2_function" "task_generator" {
+#   name        = local.task_generator_cf_name
+#   location    = local.region
+#   description = "GCS listener, BigQuery logger, and Cloud Tasks enqueuer."
 
-  build_config {
-    runtime         = "python312"
-    entry_point     = "main"
-    service_account = data.google_service_account.terraform_service_agent.id
+#   build_config {
+#     runtime         = "python312"
+#     entry_point     = "main"
+#     service_account = data.google_service_account.terraform_service_agent.id
 
-    source {
-      storage_source {
-        bucket = data.google_storage_bucket.terraform_state_bucket.name
-        object = google_storage_bucket_object.task_generator_cf_bucket_object.name
-      }
-    }
-  }
+#     source {
+#       storage_source {
+#         bucket = data.google_storage_bucket.terraform_state_bucket.name
+#         object = google_storage_bucket_object.task_generator_cf_bucket_object.name
+#       }
+#     }
+#   }
 
-  service_config {
-    service_account_email = local.image_processing_pipeline_sa_email
-    ingress_settings      = "ALLOW_ALL"
+#   service_config {
+#     service_account_email = local.image_processing_pipeline_sa_email
+#     ingress_settings      = "ALLOW_ALL"
 
-    max_instance_count = 1000
-    max_instance_request_concurrency = 5
-    available_cpu = "2"
-    available_memory    = "1024M"
+#     max_instance_count = 1000
+#     max_instance_request_concurrency = 5
+#     available_cpu = "2"
+#     available_memory    = "1024M"
 
-    environment_variables = {
-      PROJECT_ID                   = local.project_id
-      TASK_QUEUE_NAME              = google_cloud_tasks_queue.provisioned_throughput_rate_limiter.name
-      TASK_QUEUE_LOCATION          = google_cloud_tasks_queue.provisioned_throughput_rate_limiter.location
-      BIGQUERY_VIDEO_LOGS_TABLE_ID = "${local.project_id}.image_processing_logs.galeria_veo3_video_ingestion_events"
-    }
-  }
+#     environment_variables = {
+#       PROJECT_ID                   = local.project_id
+#       TASK_QUEUE_NAME              = google_cloud_tasks_queue.provisioned_throughput_rate_limiter.name
+#       TASK_QUEUE_LOCATION          = google_cloud_tasks_queue.provisioned_throughput_rate_limiter.location
+#       BIGQUERY_VIDEO_LOGS_TABLE_ID = "${local.project_id}.image_processing_logs.galeria_veo3_video_ingestion_events"
+#     }
+#   }
 
-  event_trigger {
-    trigger_region = local.region
-    event_type   = "google.cloud.pubsub.topic.v1.messagePublished"
-    pubsub_topic = google_pubsub_topic.new_asset_notification_topic.id
-    retry_policy = "RETRY_POLICY_RETRY"
-  }
-}
+#   event_trigger {
+#     trigger_region = local.region
+#     event_type   = "google.cloud.pubsub.topic.v1.messagePublished"
+#     pubsub_topic = google_pubsub_topic.new_asset_notification_topic.id
+#     retry_policy = "RETRY_POLICY_RETRY"
+#   }
+# }
 
-resource "google_pubsub_topic" "new_asset_notification_topic" {
-  name = "new-asset-notifications"
-}
+# resource "google_pubsub_topic" "new_asset_notification_topic" {
+#   name = "new-asset-notifications"
+# }
 
-data "archive_file" "task_generator_cf_archive" {
-  type        = "zip"
-  source_dir  = "${path.module}/../${local.task_generator_cf_name}/src"
-  output_path = "${local.task_generator_cf_name}.zip"
-}
+# data "archive_file" "task_generator_cf_archive" {
+#   type        = "zip"
+#   source_dir  = "${path.module}/../${local.task_generator_cf_name}/src"
+#   output_path = "${local.task_generator_cf_name}.zip"
+# }
 
-resource "google_storage_bucket_object" "task_generator_cf_bucket_object" {
-  name   = "${local.task_generator_cf_name}/${data.archive_file.task_generator_cf_archive.output_md5}.zip"
-  bucket = data.google_storage_bucket.terraform_state_bucket.name
-  source = "${local.task_generator_cf_name}.zip"
-}
+# resource "google_storage_bucket_object" "task_generator_cf_bucket_object" {
+#   name   = "${local.task_generator_cf_name}/${data.archive_file.task_generator_cf_archive.output_md5}.zip"
+#   bucket = data.google_storage_bucket.terraform_state_bucket.name
+#   source = "${local.task_generator_cf_name}.zip"
+# }
