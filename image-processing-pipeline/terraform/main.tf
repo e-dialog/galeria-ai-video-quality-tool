@@ -46,5 +46,5 @@ locals {
 
   # Service Accounts
   project_number                     = data.google_project.project.number
-  image_processing_pipeline_sa_email = google_service_account.image_processing_pipeline.email
+  # image_processing_pipeline_sa_email = google_service_account.image_processing_pipeline.email
 }
